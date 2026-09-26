@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+  <defs>
+    <linearGradient id="ztile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8B5CF6"/>
+      <stop offset="1" stop-color="#6D28D9"/>
+    </linearGradient>
+  </defs>
+  <rect width="48" height="48" rx="11" fill="url(#ztile)"/>
+  <g transform="translate(9 9) scale(0.3)" fill="#ffffff">
+    <path d="M35 20H80V35L67.5 47.5H46.287L58.787 35H20Z"/>
+    <path d="M20 80H65L80 65H41.213L53.713 52.5H32.5L20 65Z"/>
+  </g>
+</svg>

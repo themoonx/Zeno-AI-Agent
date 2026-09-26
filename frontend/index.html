@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0d0c12" />
+  <title>Zeno AI — Workspace</title>
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="./css/tokens.css" />
+  <link rel="stylesheet" href="./css/base.css" />
+  <link rel="stylesheet" href="./css/layout.css" />
+  <link rel="stylesheet" href="./css/components.css" />
+  <link rel="stylesheet" href="./css/chat.css" />
+  <link rel="stylesheet" href="./css/activity.css" />
+  <link rel="stylesheet" href="./css/code.css" />
+  <link rel="stylesheet" href="./css/file-preview.css" />
+  <link rel="stylesheet" href="./css/views.css" />
+</head>
+<body>
+  <div id="app">
+    
+    <div class="boot-screen">
+      <div class="boot-orb">
+        <svg viewBox="0 0 100 100" width="44" height="44" aria-hidden="true" fill="currentColor">
+          <path d="M35 20H80V35L67.5 47.5H46.287L58.787 35H20Z"/>
+          <path d="M20 80H65L80 65H41.213L53.713 52.5H32.5L20 65Z"/>
+        </svg>
+      </div>
+      <div class="boot-text">Zeno</div>
+      <div class="boot-bar"><i></i></div>
+      <div class="boot-sub">Initializing workspace…</div>
+    </div>
+  </div>
+
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+  <div id="modals" class="modals-root"></div>
+  <div id="palette-root"></div>
+
+  <script type="module" src="./js/errboot.js"></script>
+  <script type="module" src="./js/app.js"></script>
+</body>
+</html>

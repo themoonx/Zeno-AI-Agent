@@ -1,0 +1,58 @@
+services:
+  zeno:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      # REQUIRED in production: generate with
+      #   node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
+      ZENO_SECRET: ${ZENO_SECRET:?set ZENO_SECRET in .env}
+      HOST: 0.0.0.0
+      # PostgreSQL for persistent data (recommended in production)
+      DATABASE_URL: postgres://zeno:${POSTGRES_PASSWORD:-zeno}@db:5432/zeno
+      # Redis for job coordination (optional — DB-backed queue is the default)
+      # REDIS_URL: redis://cache:6379
+      # Isolated execution sandbox (terminal / code_exec route here)
+      ZENO_SANDBOX_URL: http://sandbox:8090
+      ZENO_DATA_DIR: /app/data
+    volumes:
+      - zeno-data:/app/data
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: zeno
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-zeno}
+      POSTGRES_DB: zeno
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U zeno"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  # Isolated execution sandbox for the agent terminal / code-exec tools.
+  # Zeno POSTs { task_id, cmd | code+language, workdir } to /exec; every
+  # request runs inside a throwaway container with no host access.
+  sandbox:
+    build: ./deploy/sandbox
+    ports:
+      - "8090:8090"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    user: root
+    restart: unless-stopped
+
+  # cache:
+  #   image: redis:7-alpine
+  #   restart: unless-stopped
+
+volumes:
+  zeno-data:
+  pg-data:

@@ -1,0 +1,32 @@
+{
+  "name": "zeno-ai",
+  "version": "1.0.0",
+  "description": "Zeno AI — a self-hosted AI workspace and agent platform. Bring your own providers, models, tools and agents into one unified environment.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "main": "backend/server.js",
+  "scripts": {
+    "start": "node backend/server.js",
+    "dev": "node backend/server.js",
+    "test": "node scripts/smoke.js",
+    "test:connectors": "node scripts/connectors.test.js && node scripts/connectors-catalog.test.js",
+    "test:e2e": "node scripts/connectors-smoke.js",
+    "test:features": "node scripts/features.test.js",
+    "test:intelligence": "node scripts/intelligence.test.js",
+    "test:ui": "node scripts/ui-verify.mjs",
+    "fixture": "node scripts/stub-provider.js",
+    "test:websearch": "node scripts/websearch.test.js"
+  },
+  "dependencies": {
+    "busboy": "^1.6.0",
+    "dompurify": "^3.4.15",
+    "express": "^4.21.2",
+    "highlight.js": "^11.11.1",
+    "marked": "^15.0.7",
+    "pg": "^8.13.1",
+    "ws": "^8.21.3"
+  },
+  "license": "MIT"
+}
