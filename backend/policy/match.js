@@ -1,5 +1,5 @@
-
-
+// Glob-style wildcard matching used by policy subjects. Supports * and **
+// (single vs multi path segment), applied to a whole string.
 
 export function wildcardMatch(pattern, value, { nocase = false } = {}) {
   if (!pattern) return false;
@@ -19,8 +19,8 @@ function globToRegex(glob) {
     const c = glob[i];
     if (c === '*') {
       if (glob[i + 1] === '*') {
-        
-        
+        // '**' crosses separators; tolerate an absent leading slash so 'C:/work/**'
+        // matches 'C:/work/file.txt' and 'C:/work/sub/file.txt'.
         re += '[\\s\\S]*';
         i++;
         if (glob[i + 1] === '/') i++;

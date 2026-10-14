@@ -1,6 +1,6 @@
-
-
-
+// Dependency-free 5-field cron evaluator (minute hour day-of-month month
+// day-of-week). Supports *, */n, lists (a,b,c), and ranges (a-b). Day-of-week:
+// 0-6 (Sun=0), 7 accepted as Sunday. All evaluation in server-local time.
 export function parseCronField(field, min, max) {
   if (field === '*' || field === '?') return { any: true, values: null };
   const values = new Set();
@@ -48,7 +48,7 @@ export function cronMatches(expr, date) {
   const dom = date.getDate();
   const month = date.getMonth() + 1;
   const dow = date.getDay();
-  
+  // Standard cron: if both dom and dow are restricted, either may match.
   const domOk = c.dom.any || c.dom.values.has(dom);
   const dowOk = c.dow.any || c.dow.values.has(dow);
   const dayOk = c.dom.any && c.dow.any ? true : c.dom.any ? dowOk : c.dow.any ? domOk : domOk && dowOk;
@@ -61,7 +61,7 @@ export function cronMatches(expr, date) {
     : false;
 }
 
-
+/** Next fire time strictly after `after` (Date), scanning forward minute by minute, max 366 days. */
 export function nextRun(expr, after = new Date()) {
   const cursor = new Date(after.getTime());
   cursor.setSeconds(0, 0);

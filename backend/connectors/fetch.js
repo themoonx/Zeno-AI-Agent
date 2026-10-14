@@ -1,5 +1,5 @@
-
-
+// SSRF-guarded fetch for connectors. Resolves and re-checks the host inside
+// each redirection hop so DNS rebinding to private IPs cannot slip through.
 import { assertPublicHttpUrl } from './guard.js';
 
 const MAX_REDIRECTS = 3;
@@ -32,7 +32,7 @@ export async function requestViaPublicInternet(rawUrl, { method = 'GET', headers
       try {
         await response.body?.cancel();
       } catch {
-        
+        /* already consumed */
       }
       continue;
     }

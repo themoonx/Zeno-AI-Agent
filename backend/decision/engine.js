@@ -1,21 +1,21 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+// JevDecisionEngine — the System One control plane.
+//
+// One entry point per concern, each returning STRUCTURED, machine-consumable
+// decisions the runtime executes directly (spec §3/§4):
+//
+//   decideTurn()      → the per-turn routing object (one batched decision round)
+//   classifyError()   → failure taxonomy for the retry engine (spec §22)
+//   retryPlan()       → retry / back-off / escalate / abort for one failure
+//   tierBias()        → learned per-user tier adjustment (spec §30, bounded,
+//                       inspectable, resettable — never self-modifying code)
+//
+// Provider stack (all real, no simulation):
+//   1. remote Jev provider  — only when the user configured one (Settings →
+//      Intelligence); any failure degrades silently to (2).   [spec §43]
+//   2. heuristic classifier — deterministic, in-process, always available.
+//
+// An LLM is NEVER invoked here by default: routing decisions must be cheaper
+// than the work they route (spec §4). A decision cache (L1) absorbs repeats.
 import crypto from 'node:crypto';
 import { logger } from '../core/logger.js';
 import { classify, coerceDecision } from './heuristics.js';
@@ -29,8 +29,8 @@ const DEFAULT_CONFIDENCE_FLOOR = 0.6;
 
 export const FAILURE_CLASSES = ['TRANSIENT', 'RATE_LIMIT', 'NETWORK', 'AUTH', 'INVALID_ARGUMENT', 'TOOL_FAILURE', 'MODEL_FAILURE', 'LOGIC_FAILURE', 'PERMISSION', 'UNKNOWN'];
 
-
-
+// Classes where a retry can plausibly succeed; everything else fails fast so
+// we never burn tokens on doomed loops (spec §22).
 const RETRYABLE = new Set(['TRANSIENT', 'RATE_LIMIT', 'NETWORK', 'MODEL_FAILURE']);
 
 export function classifyError(err) {
@@ -53,7 +53,7 @@ export function classifyError(err) {
 }
 
 export function createDecisionEngine({ repos }) {
-  const cache = new Map(); 
+  const cache = new Map(); // key -> { value, expires }
 
   function jevSettings(userId) {
     const stored = repos.users.getSetting(userId, 'jev') || {};
@@ -96,7 +96,10 @@ export function createDecisionEngine({ repos }) {
     cache.set(key, { value, expires: Date.now() + CACHE_TTL_MS });
   }
 
-  
+  /**
+   * The per-turn decision round. Resolves the full routing object; never
+   * throws (any internal failure degrades to the heuristic classification).
+   */
   async function decideTurn({ userId, query, kind = 'chat', hasTools = true, toolNames = new Set(), hasAttachments = false }) {
     const settings = jevSettings(userId);
     const opts = { kind, hasTools, hasAttachments };
@@ -127,7 +130,7 @@ export function createDecisionEngine({ repos }) {
     return decision;
   }
 
-  
+  /** Deterministic preview used by Settings → Intelligence (and tests). */
   async function preview({ userId, query, kind = 'chat', hasTools = true, toolNames = new Set(), hasAttachments = false }) {
     const decision = await decideTurn({ userId, query, kind, hasTools, toolNames, hasAttachments });
     const settings = jevSettings(userId);
@@ -139,7 +142,11 @@ export function createDecisionEngine({ repos }) {
     };
   }
 
-  
+  /**
+   * Retry plan for one classified failure (spec §22): exponential back-off
+   * with jitter; escalate only on repeated MODEL_FAILURE/TRANSIENT; permanent
+   * classes return "abort" immediately.
+   */
   function retryPlan({ failureClass, attempt = 0, maxAttempts = 2, baseDelayMs = 500, maxDelayMs = 8000 }) {
     if (!RETRYABLE.has(failureClass)) return { action: 'abort', delayMs: 0, failureClass };
     if (attempt >= maxAttempts) return { action: 'escalate', delayMs: 0, failureClass };
@@ -148,10 +155,10 @@ export function createDecisionEngine({ repos }) {
     return { action: 'retry', delayMs, failureClass };
   }
 
-  
-  
-  
-  
+  // ── learning execution policy (spec §30) ────────────────────────────────
+  // Bounded aggregates per (user, day, task type). Used ONLY to bias the
+  // starting model tier (a +1 step when tasks of this type recently needed
+  // escalation or failed); never to mutate skills, prompts, or code.
   function recordOutcome({ userId, taskType = 'general', decisionMs = 0, tokens = 0, estCostUsd = 0, escalated = false, failed = false }) {
     try {
       const day = new Date().toISOString().slice(0, 10);
@@ -173,7 +180,7 @@ export function createDecisionEngine({ repos }) {
     }
   }
 
-  
+  /** +1 tier bias when this task type recently required escalation/failed often. */
   function tierBias(userId, taskType) {
     try {
       const rows = repos.intelligence.routingStats(userId, { days: 7 });

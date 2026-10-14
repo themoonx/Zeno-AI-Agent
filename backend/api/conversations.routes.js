@@ -30,7 +30,7 @@ export function createConversationRoutes({ repos, config }) {
       let projectId = body.projectId || null;
       if (projectId && !repos.projects.getProject(req.auth.userId, projectId)) throw errors.notFound('Project');
 
-      
+      // Apply project defaults (system prompt) when created inside a project.
       let systemPrompt = body.systemPrompt || null;
       if (projectId && !systemPrompt) {
         systemPrompt = repos.projects.getProject(req.auth.userId, projectId)?.systemPrompt || null;

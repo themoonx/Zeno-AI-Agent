@@ -1,5 +1,5 @@
-
-
+// Zeno AI server entry point. Wires config → database → services → API →
+// static frontend, and starts the background worker loop.
 import express from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -71,37 +71,37 @@ async function main() {
     try {
       repos.ops.audit(entry);
     } catch {
-      
+      /* audit must never break the request path */
     }
   };
 
   const auth = createAuthService({ repos, audit });
   const { requireAuth, optionalAuth } = createAuthMiddleware(auth);
   const gateway = createGateway({ repos });
-  
-  
-  
+  // The memory service is the one provider implementation; it reaches the
+  // runtime by constructor injection (memory.contextBlock / semanticSearch /
+  // remember / consolidate — see services/memory.service.js).
   const memory = createMemoryService({ repos, gateway });
   const approvals = createApprovalGate({ repos });
-  
+  // ── kernel: the event-sourced source of truth ──────────────────────────────
   const kernel = createSessionKernel({ repos });
   const telemetry = createTelemetry({ repos });
   const snapshots = getSnapshots(repos, telemetry);
   const connectors = createConnectorService({ repos, audit });
-  
+  // Policy engine first — the harness consumes deny decisions.
   const policy = createPolicyEngine({ repos });
-  
-  
+  // The harness orchestrates every capability source (core tools, MCP servers,
+  // HTTP plugins, plugin packs, skills) into one per-user catalog.
   const harness = createHarness({ repos, connectors, audit, policy });
-  
+  // Prompt registry: composable system-prompt contributors.
   const promptRegistry = createPromptRegistry();
   registerDefaultPromptContributors(promptRegistry);
-  
+  // Progressive skill loading registers as a regular capability.
   registerTool(createSkillLoadTool({ harness }));
-  
+  // Capability executor → orchestrator (the one pipeline for every surface).
   const executor = createCapabilityExecutor({ repos, approvals, audit, policy, snapshots, telemetry });
-  
-  
+  // ── intelligence layer: Jev decision engine (System One control plane),
+  // cost-aware model routing, cost governance, and output verification. ──────
   const decision = createDecisionEngine({ repos });
   const modelRouter = createModelRouter({ repos, decision });
   const costGovernor = createCostGovernor({ repos });
@@ -126,21 +126,21 @@ async function main() {
   };
   rpcDeps.runsService = runsService;
 
-  
+  // Boot-time import: pre-kernel conversations and run events become sessions.
   importLegacyHistory({ repos, kernel, log });
 
   registerJobProcessors({ repos, runtime, memory, kernel });
   const worker = createWorkerLoop({ repos, telemetry });
   worker.start();
 
-  
+  // Scheduler: cron-triggered runs through the same runtime.
   const scheduler = createScheduler({ repos, kernel, runsService, telemetry, audit });
   scheduler.start();
-  
+  // Periodic sweeper for stale jobs (was boot-only — a gap the audit flagged).
   setInterval(() => {
     try {
       repos.ops.requeueStale?.();
-    } catch {  }
+    } catch { /* non-fatal */ }
   }, 5 * 60_000).unref?.();
 
   const generalLimiter = rateLimit({ ...config.limits.rateLimit, keyFn: (req) => `${req.auth?.userId || 'anon'}:${clientIp(req)}` });
@@ -150,7 +150,7 @@ async function main() {
   app.disable('x-powered-by');
   app.set('trust proxy', 1);
 
-  
+  // ── security headers ───────────────────────────────────────────────────────
   app.use((req, res, next) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'same-origin');
@@ -183,10 +183,10 @@ async function main() {
 
   app.use(express.json({ limit: '4mb' }));
 
-  
+  // Attach the session user (soft) so /api/health etc. can stay anonymous.
   app.use(optionalAuth);
 
-  
+  // ── API ────────────────────────────────────────────────────────────────────
   const api = express.Router();
   api.get('/health', (req, res) => {
     res.json({
@@ -220,12 +220,12 @@ async function main() {
 
   app.use('/api', generalLimiter, api);
 
-  
+  // Unknown API route → JSON 404 (never the SPA shell).
   app.use('/api', (req, res) => {
     res.status(404).json({ error: { code: 'not_found', message: 'Unknown API route' } });
   });
 
-  
+  // API error handler (before static fallback).
   app.use('/api', (err, req, res, next) => {
     if (err instanceof AppError) {
       if (err.status >= 500) log.error(err.message, err);
@@ -241,7 +241,7 @@ async function main() {
     res.status(500).json({ error: { code: 'internal', message: 'Internal server error' } });
   });
 
-  
+  // ── static frontend ───────────────────────────────────────────────────────
   const frontendDir = path.resolve(__dirname, '..', 'frontend');
   app.use(
     express.static(frontendDir, {
@@ -253,9 +253,9 @@ async function main() {
     })
   );
   app.get('*', (req, res) => {
-    
-    
-    
+    // Asset-looking paths must 404, never fall back to the SPA shell —
+    // otherwise a missing JS file comes back as HTML and breaks module graphs
+    // with a confusing parse error.
     if (/\.[a-zA-Z0-9]+$/.test(req.path)) {
       return res.status(404).type('text/plain').send('Not found');
     }
@@ -269,7 +269,7 @@ async function main() {
     log.info(`Zeno AI listening on http://${config.host}:${config.port} (db=${app.locals.dbKind}, sandbox=${sandboxMode()})`);
   });
 
-  
+  // Realtime: paired local-agent daemons connect outbound to /api/agent-ws.
   attachAgentGateway({ server, repos, config });
 
   const shutdown = () => {

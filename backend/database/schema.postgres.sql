@@ -1,4 +1,4 @@
-
+-- Zeno AI schema (PostgreSQL dialect). Applied idempotently on boot.
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
   email TEXT NOT NULL UNIQUE,
@@ -19,14 +19,14 @@ CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 CREATE TABLE IF NOT EXISTS providers (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  kind TEXT NOT NULL,                
+  kind TEXT NOT NULL,                -- openai | anthropic | gemini | ollama | openai-compatible
   name TEXT NOT NULL,
   base_url TEXT NOT NULL,
-  credentials TEXT,                  
+  credentials TEXT,                  -- encrypted at rest (AES-256-GCM)
   has_credentials INTEGER NOT NULL DEFAULT 0,
   extra_headers JSONB,
   params JSONB,
-  status TEXT NOT NULL DEFAULT 'unverified',  
+  status TEXT NOT NULL DEFAULT 'unverified',  -- unverified | connected | error
   status_detail TEXT,
   status_checked_at INTEGER,
   created_at INTEGER NOT NULL
@@ -70,8 +70,8 @@ CREATE TABLE IF NOT EXISTS conversations (
   model_id TEXT,
   model_label TEXT,
   params JSONB,
-  summary TEXT,                             
-  summary_upto_seq INTEGER,                 
+  summary TEXT,                             -- compacted older-history summary
+  summary_upto_seq INTEGER,                 -- messages ≤ this seq are covered by summary
   pinned INTEGER NOT NULL DEFAULT 0,
   archived INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL,
@@ -85,13 +85,13 @@ CREATE TABLE IF NOT EXISTS messages (
   conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
   user_id TEXT NOT NULL,
   seq INTEGER NOT NULL,
-  role TEXT NOT NULL,                
+  role TEXT NOT NULL,                -- user | assistant | system
   content TEXT NOT NULL DEFAULT '',
   attachments JSONB,
   reasoning TEXT,
   usage JSONB,
   model_label TEXT,
-  status TEXT NOT NULL DEFAULT 'complete',  
+  status TEXT NOT NULL DEFAULT 'complete',  -- complete | error | aborted
   error TEXT,
   created_at INTEGER NOT NULL
 );
@@ -104,7 +104,7 @@ CREATE TABLE IF NOT EXISTS agents (
   name TEXT NOT NULL,
   description TEXT,
   system_prompt TEXT,
-  model JSONB,                       
+  model JSONB,                       -- { provider_id, model_id, label }
   allowed_tools JSONB,
   max_steps INTEGER,
   created_at INTEGER NOT NULL,
@@ -119,9 +119,9 @@ CREATE TABLE IF NOT EXISTS agent_runs (
   agent_name TEXT,
   project_id TEXT,
   task TEXT NOT NULL,
-  kind TEXT NOT NULL DEFAULT 'agent',     
+  kind TEXT NOT NULL DEFAULT 'agent',     -- agent | chat
   conversation_id TEXT,
-  status TEXT NOT NULL DEFAULT 'queued',  
+  status TEXT NOT NULL DEFAULT 'queued',  -- queued|planning|running|waiting_approval|completed|failed|cancelled
   plan JSONB,
   result TEXT,
   error TEXT,
@@ -144,15 +144,15 @@ CREATE TABLE IF NOT EXISTS run_events (
 );
 CREATE INDEX IF NOT EXISTS idx_events_run ON run_events(run_id, seq);
 
-
+-- Event-sourced session kernel: append-only source of truth for execution.
 CREATE TABLE IF NOT EXISTS agent_sessions (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  kind TEXT NOT NULL,                            
+  kind TEXT NOT NULL,                            -- chat | task | subagent | review
   conversation_id TEXT,
   run_id TEXT,
   parent_session_id TEXT,
-  status TEXT NOT NULL DEFAULT 'active',         
+  status TEXT NOT NULL DEFAULT 'active',         -- active | ended | stopped | failed
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
@@ -161,11 +161,11 @@ CREATE INDEX IF NOT EXISTS idx_agent_sessions_conversation ON agent_sessions(con
 CREATE INDEX IF NOT EXISTS idx_agent_sessions_run ON agent_sessions(run_id);
 
 CREATE TABLE IF NOT EXISTS agent_events (
-  seq BIGSERIAL PRIMARY KEY,                     
+  seq BIGSERIAL PRIMARY KEY,                     -- global: SSE cursors are monotonic
   session_id TEXT NOT NULL REFERENCES agent_sessions(id) ON DELETE CASCADE,
   user_id TEXT NOT NULL,
   ts INTEGER NOT NULL,
-  type TEXT NOT NULL,                            
+  type TEXT NOT NULL,                            -- slash vocabulary, e.g. turn/start
   data JSONB
 );
 CREATE INDEX IF NOT EXISTS idx_agent_events_session ON agent_events(session_id, seq);
@@ -178,8 +178,8 @@ CREATE TABLE IF NOT EXISTS approvals (
   tool TEXT NOT NULL,
   summary TEXT NOT NULL,
   payload JSONB,
-  status TEXT NOT NULL DEFAULT 'pending',   
-  scope TEXT,                               
+  status TEXT NOT NULL DEFAULT 'pending',   -- pending | approved | denied
+  scope TEXT,                               -- once | task
   decided_at INTEGER,
   created_at INTEGER NOT NULL
 );
@@ -189,31 +189,31 @@ CREATE TABLE IF NOT EXISTS standing_approvals (
   user_id TEXT NOT NULL,
   run_id TEXT NOT NULL,
   tool TEXT NOT NULL,
-  scope_key TEXT,                          
+  scope_key TEXT,                          -- e.g. conversation id: "allow for this task" spans turns
   created_at INTEGER NOT NULL,
   PRIMARY KEY (run_id, tool)
 );
 
-
-
-
+-- Permission/policy rules: per-user refinements on top of the active mode.
+-- subject examples: 'fs.write:C:/Users/you/Projects/**', 'net:*:api.github.com',
+-- 'mcp:<connectorId>:*', 'shell.exec:*'
 CREATE TABLE IF NOT EXISTS policy_rules (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   subject TEXT NOT NULL,
-  effect TEXT NOT NULL,                    
+  effect TEXT NOT NULL,                    -- allow | ask | deny
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_policy_rules_user ON policy_rules(user_id);
 
-
+-- Paired local agents (daemons on the user's machine). Token stored hashed.
 CREATE TABLE IF NOT EXISTS local_agents (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   token_hash TEXT NOT NULL,
   roots TEXT,
-  status TEXT NOT NULL DEFAULT 'active',   
+  status TEXT NOT NULL DEFAULT 'active',   -- active | revoked
   last_seen_at INTEGER,
   created_at INTEGER NOT NULL
 );
@@ -225,7 +225,7 @@ CREATE TABLE IF NOT EXISTS memories (
   project_id TEXT,
   agent_id TEXT,
   conversation_id TEXT,
-  kind TEXT NOT NULL,                
+  kind TEXT NOT NULL,                -- fact | preference | project | agent | summary | episodic | semantic
   content TEXT NOT NULL,
   embedding JSONB,
   embedding_model TEXT,
@@ -248,17 +248,17 @@ CREATE INDEX IF NOT EXISTS idx_memories_scope ON memories(user_id, project_id, a
 CREATE TABLE IF NOT EXISTS connectors (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  kind TEXT NOT NULL,                
+  kind TEXT NOT NULL,                -- http | mcp
   name TEXT NOT NULL,
   endpoint TEXT NOT NULL,
-  secret_enc TEXT,                   
+  secret_enc TEXT,                   -- encrypted at rest (AES-256-GCM)
   has_secret INTEGER NOT NULL DEFAULT 0,
   headers JSONB,
   schema_spec JSONB,
   enabled INTEGER NOT NULL DEFAULT 1,
   tool_name TEXT,
   tool_description TEXT,
-  status TEXT NOT NULL DEFAULT 'unverified',  
+  status TEXT NOT NULL DEFAULT 'unverified',  -- unverified | connected | error
   status_detail TEXT,
   status_checked_at INTEGER,
   created_at INTEGER NOT NULL,
@@ -266,8 +266,8 @@ CREATE TABLE IF NOT EXISTS connectors (
 );
 CREATE INDEX IF NOT EXISTS idx_connectors_user ON connectors(user_id, created_at DESC);
 
-
-
+-- User-authored skills. Built-in skills ship on disk (skills/*.md) and are
+-- merged with these at read time, so this table only holds user content.
 CREATE TABLE IF NOT EXISTS skills (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -284,8 +284,8 @@ CREATE TABLE IF NOT EXISTS skills (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_skills_user_slug ON skills(user_id, slug);
 
-
-
+-- User-installed plugins. Built-in capability packs live in code
+-- (backend/harness/builtin-plugins.js); this table holds user packages.
 CREATE TABLE IF NOT EXISTS plugins (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -315,7 +315,7 @@ CREATE TABLE IF NOT EXISTS files (
   size INTEGER NOT NULL,
   storage_path TEXT NOT NULL,
   sha256 TEXT,
-  kind TEXT NOT NULL,                
+  kind TEXT NOT NULL,                -- image | text | pdf | other
   extracted_text TEXT,
   created_at INTEGER NOT NULL
 );
@@ -344,7 +344,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   type TEXT NOT NULL,
   payload JSONB,
   user_id TEXT,
-  status TEXT NOT NULL DEFAULT 'queued',  
+  status TEXT NOT NULL DEFAULT 'queued',  -- queued|running|done|failed
   attempts INTEGER NOT NULL DEFAULT 0,
   max_attempts INTEGER NOT NULL DEFAULT 3,
   run_after INTEGER NOT NULL DEFAULT 0,
@@ -357,7 +357,7 @@ CREATE TABLE IF NOT EXISTS jobs (
 );
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status, run_after);
 
-
+-- Observability: structured telemetry correlated by session/run/turn/call ids.
 CREATE TABLE IF NOT EXISTS telemetry (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -372,7 +372,7 @@ CREATE TABLE IF NOT EXISTS telemetry (
 CREATE INDEX IF NOT EXISTS idx_telemetry_user ON telemetry(user_id, ts DESC);
 CREATE INDEX IF NOT EXISTS idx_telemetry_kind ON telemetry(user_id, kind, ts DESC);
 
-
+-- Scheduler: cron-triggered agent tasks using the same runtime as interactive chat.
 CREATE TABLE IF NOT EXISTS schedules (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -408,8 +408,8 @@ CREATE TABLE IF NOT EXISTS schedule_runs (
 );
 CREATE INDEX IF NOT EXISTS idx_schedule_runs ON schedule_runs(schedule_id, created_at DESC);
 
-
-
+-- Intelligence: usage ledger (cost tracking). One row per completed model
+-- call with an ESTIMATED USD cost; the CostGovernor reads aggregates from here.
 CREATE TABLE IF NOT EXISTS usage_ledger (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -429,9 +429,9 @@ CREATE TABLE IF NOT EXISTS usage_ledger (
 CREATE INDEX IF NOT EXISTS idx_usage_ledger_user_day ON usage_ledger(user_id, day);
 CREATE INDEX IF NOT EXISTS idx_usage_ledger_turn ON usage_ledger(turn_id);
 
-
-
-
+-- Intelligence: routing statistics (learning execution policy). Day-grain
+-- aggregates per task type; used only to bias starting model tiers. Fully
+-- resettable from Settings.
 CREATE TABLE IF NOT EXISTS routing_stats (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,

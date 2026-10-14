@@ -1,6 +1,6 @@
-
-
-
+// Supplementary visual capture for the redesign review: auth screen, palette,
+// memory/files/projects views, light-mode chat, mobile. Uses the same minimal
+// CDP harness as ui-verify.mjs. Usage: node scripts/_visual-shots.mjs [baseUrl]
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -31,7 +31,7 @@ async function debuggerUrl() {
       const res = await fetch(`http://127.0.0.1:${PORT}/json/version`);
       const json = await res.json();
       if (json.webSocketDebuggerUrl) return json.webSocketDebuggerUrl;
-    } catch {  }
+    } catch { /* not up yet */ }
     await sleep(250);
   }
   throw new Error('Chrome did not start');
@@ -113,33 +113,33 @@ async function main() {
     await sleep(800);
   };
 
-  
+  // 1. Auth screen (logged out), dark.
   await goto(BASE);
   await sleep(600);
   await shot('20-auth-dark');
 
   await login();
 
-  
+  // 2. Chat hero with a model-less workspace? Keep default; capture hero + palette.
   await goto(`${BASE}/#/chat`);
   await sleep(600);
   await shot('21-chat-hero');
 
-  
+  // Command palette open.
   await evaluate('document.querySelector(".sidebar-link .kbd") && [...document.querySelectorAll(".sidebar-link")].find(b => b.textContent.includes("Search"))?.click()');
   await sleep(500);
   await shot('22-palette');
   await evaluate("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))");
   await sleep(300);
 
-  
+  // 3. Secondary views.
   for (const [route, name] of [['projects', '23-projects'], ['memory', '24-memory'], ['files', '25-files']]) {
     await goto(`${BASE}/#/${route}`);
     await sleep(700);
     await shot(name);
   }
 
-  
+  // 4. Light theme: chat hero + settings general.
   await goto(`${BASE}/#/chat`);
   await sleep(500);
   await evaluate("document.documentElement.dataset.theme = 'light'");
@@ -150,7 +150,7 @@ async function main() {
   await shot('27-settings-light');
   await evaluate("document.documentElement.dataset.theme = 'dark'");
 
-  
+  // 5. Composer permission menu open (dark).
   await goto(`${BASE}/#/chat`);
   await sleep(600);
   await evaluate('document.querySelector(".composer-bar .perm-chip")?.click()');
@@ -158,7 +158,7 @@ async function main() {
   await shot('28-perm-menu');
   await evaluate("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))");
 
-  
+  // 6. Mobile chat hero.
   await S('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
   await goto(`${BASE}/#/chat`);
   await sleep(700);

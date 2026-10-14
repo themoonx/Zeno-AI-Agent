@@ -1,7 +1,7 @@
-
-
-
-
+// Chat view: conversation thread + composer + streaming + regenerate/edit.
+// Wires the agent activity surface: animated Thinking state (expandable, with
+// live reasoning), tool-state cards with file previews, Plan Mode cards, and
+// permission-mode-aware approvals.
 import { h, toast } from '../ui.js';
 import { icon, zenoMark } from '../icons.js';
 import { store, currentConversation, currentModel, defaultModel } from '../state.js';
@@ -84,7 +84,7 @@ export function mountChatView(root, { conversationId }) {
           activityGroup = null;
           threadEl.append(renderUserMessage(msg, { onEdit: beginEdit }));
         } else if (msg.role === 'tool') {
-          
+          // Unified-mode tool round — render as an activity card, grouped.
           const att = msg.attachments || {};
           if (!activityGroup) {
             activityGroup = h('div', { class: 'chat-activity' });
@@ -98,7 +98,7 @@ export function mountChatView(root, { conversationId }) {
         } else if (msg.role === 'assistant') {
           const att = msg.attachments && !Array.isArray(msg.attachments) ? msg.attachments : null;
           if (att?.kind === 'tool_step') {
-            activityGroup = null; 
+            activityGroup = null; // tool step boundary
             continue;
           }
           if (att?.kind === 'plan') {
@@ -112,7 +112,7 @@ export function mountChatView(root, { conversationId }) {
       }
     }
 
-    
+    // Composer (rebuild keeps it simple across conversations)
     composer?.destroy();
     composerZoneHolder.innerHTML = '';
     composer = createComposer({ onSend: handleSend, onStop: handleStop });
@@ -137,16 +137,16 @@ export function mountChatView(root, { conversationId }) {
     updateUndoBar();
   }
 
-  
-  
-  
+  // ── workspace undo / redo ──────────────────────────────────────────────────
+  // The backend derives the undo stack from the session event log; this bar
+  // mirrors its stack state above the composer.
   async function updateUndoBar() {
     if (disposed) return;
     let st = { canUndo: false, canRedo: false };
     if (state.conversation) {
       try {
         st = await api.get(`/chat/snapshot-stack?conversationId=${encodeURIComponent(state.conversation.id)}`);
-      } catch {  }
+      } catch { /* keep defaults */ }
     }
     if (disposed) return;
     if (!undoBar || !undoBar.isConnected) {
@@ -212,7 +212,7 @@ export function mountChatView(root, { conversationId }) {
     );
   }
 
-  
+  // ── streaming send ────────────────────────────────────────────────────────
   async function handleSend({ content, attachments }) {
     if (disposed || sending || store.state.streaming) return;
     sending = true;
@@ -235,7 +235,7 @@ export function mountChatView(root, { conversationId }) {
         history.replaceState(null, '', `#/chat/${conv.id}`);
       }
 
-      
+      // Optimistic user message
       optimistic = {
         id: 'tmp_' + Date.now(),
         role: 'user',
@@ -283,7 +283,7 @@ export function mountChatView(root, { conversationId }) {
 
   async function regenerate() {
     if (store.state.streaming || !state.conversation) return;
-    
+    // Remove trailing assistant message(s) locally; server re-slices.
     while (state.messages.length && state.messages[state.messages.length - 1].role === 'assistant') state.messages.pop();
     threadEl.querySelectorAll('.msg.assistant').forEach((el) => {
       if (!state.messages.some((m) => m.id === el.dataset.id)) el.remove();
@@ -297,7 +297,7 @@ export function mountChatView(root, { conversationId }) {
     composer.textarea.dispatchEvent(new Event('input'));
     composer.focus();
     state.editing = msg;
-    
+    // Intercept next send: replace mode
     composer.el.dataset.editId = msg.id;
   }
 
@@ -310,11 +310,11 @@ export function mountChatView(root, { conversationId }) {
     const el = renderAssistantMessage(streamMsg, { streaming: true });
     state.streamingEl = el;
 
-    
+    // Unified activity zone: sits before the streaming answer.
     const activityZone = h('div', { class: 'chat-activity' });
     let actingEl = null;
-    const liveToolCards = new Map(); 
-    const subagentCards = new Map(); 
+    const liveToolCards = new Map(); // callId -> running card (per call)
+    const subagentCards = new Map(); // subSessionId -> running card (per subagent)
     let thinking = null;
     let stopThinkingLabel = null;
     let planCardEl = null;
@@ -365,7 +365,7 @@ export function mountChatView(root, { conversationId }) {
       activityZone.remove();
       el.remove();
       state.streamingEl = null;
-      
+      // Pull fresh messages from the server to converge on the truth.
       refreshMessages(finalEvent?.status);
       if (finalEvent?.status === 'aborted') toast('Generation stopped', 'info');
     };
@@ -380,7 +380,7 @@ export function mountChatView(root, { conversationId }) {
               ensureThinking();
               if (event.label && thinking?._label) thinking._label.textContent = event.label;
             } else if (event.phase === 'researching' || event.phase === 'verifying') {
-              
+              // Action-level progress (no hidden reasoning): a concise label.
               stopThinkingLabel?.();
               setActing(event.label || (event.phase === 'researching' ? 'Researching sources…' : 'Verifying…'));
             } else if (event.phase === 'executing') {
@@ -407,7 +407,7 @@ export function mountChatView(root, { conversationId }) {
               const st = planCardEl?.querySelector('.plan-status');
               if (st) st.textContent = event.phase === 'approved' ? ' — executing' : ' — declined';
             } else if (event.phase === 'progress') {
-              
+              // Live step completion from the backend's plan/progress event.
               planCardEl?._setProgress?.(event.completedSteps || 0);
               maybeScroll();
             } else if (event.phase === 'finished') {
@@ -421,7 +421,7 @@ export function mountChatView(root, { conversationId }) {
             break;
           }
           case 'user_message':
-            
+            // Replace optimistic with the persisted one.
             if (event.message) {
               const idx = state.messages.findIndex((m) => m.id.startsWith('tmp_'));
               if (idx !== -1) state.messages[idx] = event.message;
@@ -486,7 +486,7 @@ export function mountChatView(root, { conversationId }) {
           }
           case 'approval_required': {
             setActing(null);
-            
+            // Plan approvals live inside the plan card itself.
             if (event.tool === 'plan' && planCardEl?._setApprovalId) {
               planCardEl._setApprovalId(event.approvalId);
               maybeScroll();
@@ -508,8 +508,8 @@ export function mountChatView(root, { conversationId }) {
             stopThinking();
             sawOutput = true;
             streamMsg.content += event.text;
-            
-            
+            // Coalesce markdown re-parses to one per animation frame — tokens
+            // can arrive far faster than frames render.
             if (!pendingRender) {
               pendingRender = requestAnimationFrame(() => {
                 pendingRender = 0;
@@ -558,8 +558,8 @@ export function mountChatView(root, { conversationId }) {
       {}
     );
 
-    
-    
+    // Safety: if connection dies without done event, refresh after stream end
+    // (api.chatStream resolves silently; watch DOM instead of promising).
   }
 
   async function refreshMessages(statusHint) {
@@ -584,7 +584,7 @@ export function mountChatView(root, { conversationId }) {
     abortStream?.();
   }
 
-  
+  // ── scroll management ─────────────────────────────────────────────────────
   function maybeScroll() {
     if (stickToBottom) scrollToBottom();
   }

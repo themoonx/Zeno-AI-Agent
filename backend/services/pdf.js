@@ -1,6 +1,6 @@
-
-
-
+// Minimal dependency-free PDF text extraction. Works for typical
+// text-based PDFs with FlateDecode streams; returns null when the PDF is
+// scanned/encrypted/unsupported so callers can surface an honest limitation.
 import zlib from 'node:zlib';
 
 export function extractPdfText(buf, { maxChars = 60_000 } = {}) {
@@ -8,7 +8,7 @@ export function extractPdfText(buf, { maxChars = 60_000 } = {}) {
     const raw = Buffer.isBuffer(buf) ? buf : Buffer.from(buf);
     if (raw.slice(0, 5).toString() !== '%PDF-') return null;
 
-    
+    // Collect all stream payloads and try to inflate them.
     const chunks = [];
     const streamRe = /stream\r?\n?/g;
     let m;
@@ -28,7 +28,7 @@ export function extractPdfText(buf, { maxChars = 60_000 } = {}) {
     }
     if (!chunks.length) return null;
 
-    
+    // Extract literal strings from text-showing operators.
     const out = [];
     for (const content of chunks) {
       const tokenRe = /\((?:\\.|[^\\()])*\)|\bTJ\b|\bTj\b|\bTd\b|\bTD\b|\bT\*\b|\bET\b/g;

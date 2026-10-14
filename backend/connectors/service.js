@@ -1,7 +1,7 @@
-
-
-
-
+// Per-user connectors: user-owned HTTP plugin endpoints and remote MCP
+// servers. Each connector is stored per user, with secrets encrypted at rest
+// (AES-256-GCM via core/crypto). The catalog is built per turn from that
+// user's ENABLED connectors only — no global registry mutation.
 import { randomId, encryptSecret, decryptSecret } from '../core/crypto.js';
 import { errors } from '../core/errors.js';
 import { validate } from '../core/validate.js';
@@ -200,10 +200,10 @@ export function createConnectorService({ repos, audit, transport, validateEndpoi
     return raw ? decryptSecret(raw) : null;
   }
 
-  
-  
-  
-  const mcpCache = new Map(); 
+  // MCP tool discovery is a 3-round-trip handshake — cache the resolved tool
+  // list per connector, keyed by the row's updated_at so edits/enable toggles
+  // invalidate naturally. TTL guards against remote-side tool changes.
+  const mcpCache = new Map(); // connectorId -> { key, expires, tools }
   const MCP_CACHE_TTL = 60_000;
 
   function invalidateMcpCache(connectorId) {

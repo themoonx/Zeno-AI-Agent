@@ -1,15 +1,15 @@
-
-
-
-
+// Event frame mapping — the agent emits KERNEL events (slash vocabulary, see
+// backend/kernel/log.js); this module translates them into the chat SSE frames
+// the frontend renders. The durable/live split lives in the kernel: deltas and
+// reasoning are live-only; everything else is persisted first, relayed second.
 export function toChatFrame(event) {
   const { type, data } = event;
   switch (type) {
     case 'output/delta': return { type: 'delta', text: data.text };
     case 'output/reasoning': return { type: 'reasoning', text: data.text };
     case 'phase/changed':
-      
-      
+      // Action-level progress only (harness spec §27): phases map to concise
+      // status labels in the chat UI; no hidden reasoning is ever exposed.
       if (['thinking', 'planning', 'routing', 'researching', 'executing', 'verifying'].includes(data.phase)) {
         return { type: 'status', phase: data.phase, label: data.detail || null };
       }

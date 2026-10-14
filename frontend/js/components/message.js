@@ -1,5 +1,5 @@
-
-
+// Message renderer: user bubbles, assistant markdown, reasoning collapse,
+// attachments, actions (copy / regenerate / edit), streaming states.
 import { h, copyText, fmtTokens } from '../ui.js';
 import { icon, zenoMark } from '../icons.js';
 import { markdownEl } from '../markdown.js';
@@ -21,8 +21,8 @@ export function renderUserMessage(msg, { onEdit } = {}) {
   );
   if (attachments.length) wrap.append(h('div', { class: 'msg-attachments' }, attachments));
 
-  
-  
+  // Strip inline <file> context blocks from display — they're injected for
+  // the model only.
   const display = String(msg.content || '').replace(/\n?<file name="[^"]*"[^>]*(?:\/>|>[\s\S]*?<\/file>)/g, '');
   wrap.append(h('div', { class: 'bubble', text: display.trim() || msg.content }));
   wrap.append(

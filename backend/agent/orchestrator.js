@@ -1,21 +1,21 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+// Agent Orchestrator — the single per-turn pipeline for chat turns, task runs,
+// subagents, and reviews. The session event log (backend/kernel) is the source
+// of truth: the model transcript is RECONSTRUCTED from the log, every durable
+// action appends an event, and the reconstruction invariant is enforced so a
+// missed write fails loudly instead of drifting.
+//
+//   session → turn/start → transcript → JEV ROUTING (decision layer) →
+//     capability catalog → context assembly → [research stage] →
+//     [plan stage] → loop: model call (retry+cost gate) → capability
+//     resolution → policy → approval → ExecutionWorld → tool events
+//     (parallel where safe) → results → next step → VERIFICATION → turn/end
+//     (+ invariant)
+//
+// The decision layer (backend/decision) chooses chat-vs-agent, model tier,
+// verification level, and risk — it never generates content. The model routes
+// (backend/routing) pick the MINIMUM-cost model per purpose (main loop,
+// planning, compaction, wrap-up, verification) subject to the user's routing
+// mode. The cost governor (backend/routing/cost) gates every model call.
 import { randomId } from '../core/crypto.js';
 import { config } from '../core/config.js';
 import { logger } from '../core/logger.js';
@@ -46,6 +46,13 @@ const CHAR_PER_TOKEN = 3.6;
 
 export class TurnError extends Error {}
 
+/**
+ * Dispatch one round of tool calls: non-sensitive capabilities run
+ * concurrently (bounded by maxParallel, overflow strictly sequential);
+ * sensitive ones stay strictly sequential so human approval gating never
+ * overlaps. Results are returned in the original call order. Exported for
+ * direct testing of the parallelism and ordering guarantees.
+ */
 export async function executeToolCalls({ toolCalls, catalog, runner, signal = null, maxParallel = 6 }) {
   const freeIdx = [];
   const gatedIdx = [];
@@ -78,7 +85,18 @@ export async function executeToolCalls({ toolCalls, catalog, runner, signal = nu
 }
 
 export function createOrchestrator({ repos, gateway, memory, approvals, audit, harness, executor, policy, kernel, promptRegistry, telemetry, decision: decisionEngine, modelRouter, costGovernor, verification }) {
-    async function runTurn(ctx) {
+  /**
+   * Run one turn.
+   * ctx: {
+   *   userId, sessionId, runId, kind: 'chat'|'agent'|'subagent'|'review',
+   *   conversationId|null, projectId|null, query,
+   *   modelRowId, planMode, permissionMode, scopeKey, signal,
+   *   onEvent(frame), persistStep(row), onPlan(plan), agentIdentity, onUsage,
+   *   tools: schemas|null (subagents/reviewer may restrict the catalog),
+   *   attachments: number of attached files, maxRoundsOverride: number
+   * }
+   */
+  async function runTurn(ctx) {
     const {
       userId, sessionId, runId, kind = 'chat', conversationId = null, projectId = null,
       query, modelRowId, scopeKey = null, signal, onEvent = null, onKernelEvent = null,
@@ -94,11 +112,11 @@ export function createOrchestrator({ repos, gateway, memory, approvals, audit, h
       ctx.onUsage?.({ promptTokens: usage.promptTokens, completionTokens: usage.completionTokens });
     };
 
-    
-    
-    
-    
-    
+    // Per-turn emitter: appends to the kernel (durable) and relays the mapped
+    // chat frame (live). Live-only events (deltas/reasoning/phases) use
+    // persist:false and never enter the log. Durable events additionally flow
+    // to `onKernelEvent` — the run-scoped relay (background runs publish them
+    // to the runs SSE topic).
     const emit = (type, data = {}, { persist = true } = {}) => {
       const event = kernel.append(sessionId, userId, type, data, { persist });
       if (event.seq != null) onKernelEvent?.(event);
@@ -109,10 +127,10 @@ export function createOrchestrator({ repos, gateway, memory, approvals, audit, h
       return event;
     };
 
-    
-    
-    
-    
+    // Observability + cost accounting for every model call (chat, wrap-up,
+    // planning, compaction, verification, research). Records scrubbed
+    // latency/usage/outcome telemetry AND a usage-ledger row with the
+    // estimated cost, keyed by the model actually used for that call.
     let modelRow = null;
     const rowFor = (id) => (id && modelRow && id === modelRow.id ? modelRow : repos.providers.getModel(userId, id));
     const emitModelCall = (purpose, latencyMs, usage, ok = true, error = null, modelRowIdUsed = null) => {
@@ -157,18 +175,18 @@ export function createOrchestrator({ repos, gateway, memory, approvals, audit, h
               promptTokens: usage.promptTokens,
               completionTokens: usage.completionTokens,
             });
-          } catch {  }
+          } catch { /* cost tracking must never break a turn */ }
         }
       }
     };
 
-    
-    
+    // The turn's routing decision — declared at function scope so the failure
+    // path can attribute the outcome to the task type.
     let decision = null;
 
-    
-    
-    
+    // Cost gate for one planned model call. Enforces per-request/day/month
+    // budgets; on breach either downgrades to a cheaper tier or (action:
+    // 'block') fails the turn with an actionable message.
     async function gateCost(purpose, rowId, messagesForEstimate = null) {
       if (!costGovernor || !rowId) return rowId;
       const row = rowFor(rowId);
@@ -186,7 +204,7 @@ export function createOrchestrator({ repos, gateway, memory, approvals, audit, h
             const cheaper = modelRouter.select(userId, modelRouter.TIERS[idx - 1], { excludeIds: [rowId] });
             if (cheaper) return cheaper.id;
           }
-        } catch {  }
+        } catch { /* downgrade is best-effort */ }
       }
       return rowId;
     }
@@ -197,13 +215,13 @@ export function createOrchestrator({ repos, gateway, memory, approvals, audit, h
       repos.runs.updateRun(runId, { status: 'running', startedAt: Date.now() });
       emit('turn/start', { turnId, query: String(query || '').slice(0, 300), kind });
 
-      
-      
+      // ── transcript: reconstructed from the event log FIRST, so the decision
+      // layer can see whether this conversation is already mid-task. ────────
       const reconstructed = reconstructTranscript(kernel, sessionId);
       const live = reconstructed.map((m) => ({ ...m, _seq: undefined }));
       const hasToolHistory = reconstructed.some((m) => m.role === 'tool');
 
-      
+      // ── capability catalog (once per turn) ───────────────────────────────
       let schemas = ctx.tools || [];
       let capabilities = '';
       let matchedSkills = [];
@@ -220,10 +238,10 @@ export function createOrchestrator({ repos, gateway, memory, approvals, audit, h
         allSkills = prepared.skills.filter((s) => s.enabled && s.instructions);
       }
 
-      
-      
-      
-      
+      // ── JEV ROUTING: one batched decision round (task type, complexity,
+      // execution mode, model tier, risk, verification). Deterministic
+      // heuristics by default; a remote Jev provider when configured. The
+      // decision shapes the turn; it never generates content. ──────────────
       let agentMode = true;
       if (decisionEngine && kind !== 'subagent' && kind !== 'review') {
         emit('phase/changed', { phase: 'routing', detail: 'Understanding the request' }, { persist: false });
@@ -260,9 +278,9 @@ export function createOrchestrator({ repos, gateway, memory, approvals, audit, h
       if (decision) {
         const settings = repos.users.getSetting(userId, 'jev') || {};
         const floor = Number.isFinite(Number(settings.confidence_floor)) ? Number(settings.confidence_floor) : 0.6;
-        
-        
-        
+        // SIMPLE RESPONSE MODE: confident, clearly self-contained chat turns
+        // run without the agent pipeline (no tool catalog, no tool tokens).
+        // Anything ambiguous or already mid-task FAILS OPEN to agentic.
         agentMode = !(
           kind === 'chat' &&
           decision.executionMode === 'chat' &&
@@ -273,7 +291,7 @@ export function createOrchestrator({ repos, gateway, memory, approvals, audit, h
         );
       }
 
-      
+      // Simple chat: strip the tool surface entirely.
       if (!agentMode) {
         schemas = [];
         offerTools = false;
@@ -283,7 +301,7 @@ export function createOrchestrator({ repos, gateway, memory, approvals, audit, h
       const toolNames = new Set(schemas.map((t) => t.name));
       const hasLocal = schemas.some((t) => t.name.startsWith('local_')) || localFsAvailable(userId) || getAgentRegistry().isOnline(userId);
 
-      
+      // ── model routing: minimum-cost model per purpose ────────────────────
       let mainModelRowId = modelRowId;
       if (modelRouter) {
         try {
@@ -298,7 +316,7 @@ export function createOrchestrator({ repos, gateway, memory, approvals, audit, h
         emit('model/routed', { turnId, purpose: 'main', requested: modelRowId, used: mainModelRowId, tier: decision?.modelTier || null });
       }
 
-      
+      // ── context assembly: transcript RECONSTRUCTED from the event log ────
       emit('phase/changed', { phase: 'thinking' });
       const memoryBlock = await memory.contextBlock(userId, { projectId, query, conversationId, limit: 10 });
       const conv = conversationId ? repos.chat.getConversation(userId, conversationId) : null;
@@ -314,11 +332,11 @@ export function createOrchestrator({ repos, gateway, memory, approvals, audit, h
           });
       let messages = [{ role: 'system', content: system }, ...live];
 
-      
-      
-      
-      
-      
+      // ── research stage: automatic multi-source evidence gathering ────────
+      // Runs when the decision layer classified this as research work and web
+      // tools are actually available. Decomposes into sub-queries, executes
+      // them IN PARALLEL through the real capability executor, reads the top
+      // sources, and injects a digest into the system prompt.
       let evidenceDigest = null;
       if (agentMode && decision && (decision.taskType === 'research' || decision.taskType === 'web') && decision.complexity !== 'trivial') {
         try {
@@ -334,9 +352,9 @@ export function createOrchestrator({ repos, gateway, memory, approvals, audit, h
         }
       }
 
-      
-      
-      
+      // ── context budgeting: compact long histories into a durable event ──
+      // The summary is written to the log (`context/compacted`) so replayed
+      // transcripts are byte-identical to the live one — no drift, no re-runs.
       try {
         const budget = budgetCharsFor(modelRow);
         if (estimateChars(live) > budget && live.length > 7) {
@@ -372,7 +390,7 @@ export function createOrchestrator({ repos, gateway, memory, approvals, audit, h
         log.warn(`history compaction skipped: ${err.message}`);
       }
 
-      
+      // ── plan stage (Plan Mode) ───────────────────────────────────────────
       let plan = null;
       if (planMode && offerTools) {
         plan = await runPlanningStage({ userId, sessionId, turnId, runId, modelRowId: mainModelRowId, query, capabilities, conversationId, permissionMode, requiresApproval: kind === 'chat' && permissionMode === 'ask', emit, onPlan, observedModelCall, gateCost, trackUsage });
@@ -381,7 +399,7 @@ export function createOrchestrator({ repos, gateway, memory, approvals, audit, h
           finishTurn('complete', plan.refusal, '');
           return { text: plan.refusal, reasoning: '', usage, status: 'complete' };
         }
-        
+        // Re-assemble with the plan at high priority.
         messages[0] = { role: 'system', content:
           promptRegistry
             ? promptRegistry.assemble({
@@ -395,7 +413,7 @@ export function createOrchestrator({ repos, gateway, memory, approvals, audit, h
               }) };
       }
 
-      
+      // ── agentic loop ─────────────────────────────────────────────────────
       const maxRounds = Math.max(1, Math.min(config.agent.maxSteps, Number(ctx.maxRoundsOverride) || 12));
       let regenUsed = false;
       for (let round = 1; round <= maxRounds; round++) {
@@ -410,8 +428,8 @@ export function createOrchestrator({ repos, gateway, memory, approvals, audit, h
         await gateCost('turn', mainModelRowId, messages);
         await observedModelCall('turn', (onUsage) =>
           withModelRetry(async () => {
-            
-            
+            // A retry restarts the attempt cleanly: no stale deltas may leak
+            // into the transcript, and we never re-emit after partial output.
             stepText = '';
             stepReasoning = '';
             deltaEmitted = false;
@@ -424,7 +442,7 @@ export function createOrchestrator({ repos, gateway, memory, approvals, audit, h
               onDelta: (d) => {
                 deltaEmitted = true;
                 if (d.type === 'text') {
-                  if (toolCalls.length) return; 
+                  if (toolCalls.length) return; // some models emit trailing text after tool calls
                   stepText += d.text;
                   emit('output/delta', { text: d.text }, { persist: false });
                 } else {
@@ -462,9 +480,9 @@ export function createOrchestrator({ repos, gateway, memory, approvals, audit, h
         live.push({ role: 'assistant', content: stepText, toolCalls: toolCalls.map((t) => ({ id: t.id, name: t.name, arguments: t.arguments })) });
         messages.push({ role: 'assistant', content: stepText, toolCalls });
 
-        
-        
-        
+        // ── tool dispatch: parallel where safe, sequential where gated ──────
+        // Non-sensitive capabilities run concurrently (bounded); sensitive
+        // ones stay strictly sequential so approval gating stays human-paced.
         const activeCatalog = harness && !ctx.tools ? catalog : new Map((ctx.tools || []).map((t) => [t.name, t]));
         const runner = (tc) => {
           const tool = activeCatalog.get(tc.name) || null;
@@ -479,8 +497,8 @@ export function createOrchestrator({ repos, gateway, memory, approvals, audit, h
           const tc = toolCalls[i];
           const outcome = outcomes[i];
           const output = String(outcome.output || '').slice(0, config.agent.maxToolOutputChars);
-          
-          
+          // Mirror the executor's event: an unresolved call is recorded (and
+          // replayed) as tool 'unknown' — the transcript must agree with the log.
           const effectiveName = activeCatalog.get(tc.name) ? tc.name : 'unknown';
           persistStep?.({
             role: 'tool',
@@ -492,8 +510,8 @@ export function createOrchestrator({ repos, gateway, memory, approvals, audit, h
               ...(outcome.file ? { file: outcome.file } : {}),
             },
           });
-          
-          
+          // tool/completed was already appended by the executor (it owns the
+          // observation); the transcript gets the model-facing shape.
           live.push({ role: 'tool', toolCallId: tc.id, name: effectiveName, content: output });
           messages.push({ role: 'tool', toolCallId: tc.id, name: effectiveName, content: outcome.output });
         }
@@ -508,7 +526,7 @@ export function createOrchestrator({ repos, gateway, memory, approvals, audit, h
         }
       }
 
-      
+      // Round bound: wrap up without tools.
       messages.push({
         role: 'user',
         content: 'You have reached the tool-use limit for this reply. Give your best final answer now based on everything so far.',
@@ -532,22 +550,25 @@ export function createOrchestrator({ repos, gateway, memory, approvals, audit, h
       if (plan) emit('plan/finished', { planId: plan.planId });
       return await completeWithVerification(wrap, '');
 
-      
+      /** Finalize: append the assistant/message event, verify the invariant, close the turn.
+       *  Lives inside the try block on purpose: it closes over `live` (the turn's
+       *  transcript), which is block-scoped here. Declaring it at function scope
+       *  would throw `ReferenceError: live is not defined` on every completion. */
       function finishTurn(status, text, reasoning) {
         let estCostUsd = 0;
         try {
           estCostUsd = costGovernor?.turnCost(turnId)?.cost || 0;
-        } catch {  }
+        } catch { /* ignore */ }
         const usageOut = { ...usage, ...(estCostUsd > 0 ? { estCostUsd: Number(estCostUsd.toFixed(6)) } : {}) };
         emit('assistant/message', { turnId, text, reasoning, usage: usageOut, status });
         live.push({ role: 'assistant', content: text });
-        
-        
+        // Reconstruction invariant: the transcript the model saw must equal the
+        // transcript derived from the persisted session state.
         const replayed = projectMessages(kernel.replay(sessionId));
         const liveCanonical = live.map(({ _seq, ...m }) => m);
         checkInvariant(sessionId, liveCanonical, replayed);
         emit('turn/end', { turnId, status, usage: usageOut });
-        
+        // Learning execution policy: bounded per-task-type aggregates (spec §30).
         decisionEngine?.recordOutcome({
           userId,
           taskType: decision?.taskType || 'general',
@@ -559,7 +580,12 @@ export function createOrchestrator({ repos, gateway, memory, approvals, audit, h
         });
       }
 
-            async function completeWithVerification(text, reasoning) {
+      /** Verification stage: check the drafted answer before finalizing
+       *  (harness spec §21). Level comes from the decision layer (risk/complexity
+       *  aware) modulated by user settings; never runs for simple chat. On a
+       *  strict-level failure, regenerate ONCE at a higher tier — bounded,
+       *  budget-gated, never silent (findings are emitted either way). */
+      async function completeWithVerification(text, reasoning) {
         const level = verification && agentMode && decision ? verification.levelFor(decision, userId) : 'none';
         if (level === 'none' || !String(text || '').trim() || signal?.aborted) {
           finishTurn('complete', text, reasoning);
@@ -627,7 +653,8 @@ export function createOrchestrator({ repos, gateway, memory, approvals, audit, h
         return { text: finalText, reasoning: finalReasoning, usage, status: 'complete' };
       }
 
-            async function runResearchStage({ catalog: cat, schemas: schemasNow, signal: sig }) {
+      /** Research stage (harness spec §20). Returns { digest, block } or null. */
+      async function runResearchStage({ catalog: cat, schemas: schemasNow, signal: sig }) {
         const researchSettings = repos.users.getSetting(userId, 'research') || {};
         if (researchSettings.enabled === false) return null;
         const visible = new Set(schemasNow.map((s) => s.name));
@@ -639,7 +666,7 @@ export function createOrchestrator({ repos, gateway, memory, approvals, audit, h
 
         emit('phase/changed', { phase: 'researching', detail: 'Planning the research' }, { persist: false });
 
-        
+        // 1. Decompose into independent sub-queries (cheap aux-tier call).
         let subqueries = [String(query)];
         try {
           const planRowId = modelRouter
@@ -672,11 +699,11 @@ export function createOrchestrator({ repos, gateway, memory, approvals, audit, h
 
         emit('research/started', { turnId, subqueries: subqueries.length, maxReads });
 
-        
-        
-        
-        
-        
+        // The evidence rounds are real transcript rounds: an assistant attempt
+        // with tool_calls, then the tool results — in COMPLETION order, pushed
+        // to `live`/`messages` exactly as the executor appends each durable
+        // tool event, so the reconstruction invariant holds and strict
+        // OpenAI-compatible providers see a protocol-valid transcript.
         const searchCallIds = subqueries.map(() => randomId('call'));
         const searchAttempt = subqueries.map((sq, i) => ({ id: searchCallIds[i], name: 'web_search', arguments: { query: sq, max_results: 6 } }));
         persistStep?.({
@@ -700,8 +727,8 @@ export function createOrchestrator({ repos, gateway, memory, approvals, audit, h
           messages.push({ role: 'tool', toolCallId: callId, name: toolName, content: outcome.output });
         };
 
-        
-        
+        // 2. Parallel searches through the real capability executor (real
+        //    policy checks, real events, real results — no simulation).
         const searchOutcomes = await Promise.all(
           subqueries.map((sq, i) =>
             executor.execute({
@@ -731,11 +758,11 @@ export function createOrchestrator({ repos, gateway, memory, approvals, audit, h
               seenUrls.add(url);
               sources.push({ title: String(r.title || '').slice(0, 200), url, snippet: String(r.snippet || '').slice(0, 500) });
             }
-          } catch {  }
+          } catch { /* a failed search is recorded; the rest still count */ }
         }
         if (!sources.length) return null;
 
-        
+        // 3. Follow-up reads of the most relevant URLs (parallel, bounded).
         const readOutcomes = [];
         if (readTool && maxReads > 0) {
           const toRead = sources.slice(0, maxReads);
@@ -770,7 +797,7 @@ export function createOrchestrator({ repos, gateway, memory, approvals, audit, h
           reads.forEach((r, i) => readOutcomes.push({ source: toRead[i], outcome: r }));
         }
 
-        
+        // 4. Digest for synthesis + verification.
         const parts = [];
         for (const s of sources.slice(0, 12)) {
           parts.push(`[${s.url}] ${s.title}\n${s.snippet}`);
@@ -781,7 +808,7 @@ export function createOrchestrator({ repos, gateway, memory, approvals, audit, h
             const parsed = JSON.parse(outcome.output || '{}');
             const content = String(parsed.content || parsed.text || '').replace(/\s+/g, ' ').slice(0, 1_500);
             if (content) parts.push(`[${source.url}] (full read) ${content}`);
-          } catch {  }
+          } catch { /* skip malformed read */ }
         }
         const digest = parts.join('\n\n').slice(0, 12_000);
         const block =
@@ -795,19 +822,19 @@ export function createOrchestrator({ repos, gateway, memory, approvals, audit, h
         throw err;
       }
       if (err instanceof ReconstructionError) {
-        
-        
+        // Invariant failure: fail LOUDLY — the session cannot be trusted to
+        // continue silently drifting.
         log.error(err.message);
         telemetry?.failure({ userId, sessionId, runId, where: 'invariant', error: err.message });
         try {
           kernel.append(sessionId, userId, 'session/failed', { error: 'reconstruction desync', details: err.details });
-        } catch {  }
+        } catch { /* the log itself may be the problem */ }
         throw err;
       }
       telemetry?.failure({ userId, sessionId, runId, where: 'turn', error: String(err?.message || err).slice(0, 300) });
       log.warn(`turn failed: ${err.message}`, { stack: err.stack });
       emit('turn/end', { turnId, status: 'failed', error: err.message });
-      
+      // Learning execution policy: a failed turn is a strong signal.
       try {
         decisionEngine?.recordOutcome({
           userId,
@@ -818,12 +845,12 @@ export function createOrchestrator({ repos, gateway, memory, approvals, audit, h
           escalated: false,
           failed: true,
         });
-      } catch {  }
+      } catch { /* ignore */ }
       throw err;
     }
   }
 
-  
+  // ── plan stage ─────────────────────────────────────────────────────────────
   async function runPlanningStage({ userId, sessionId, turnId, runId, modelRowId, query, capabilities, conversationId, permissionMode, requiresApproval = false, emit, onPlan, observedModelCall, gateCost = null, trackUsage = null }) {
     emit('phase/changed', { phase: 'planning' });
     let steps = [];
@@ -860,8 +887,8 @@ export function createOrchestrator({ repos, gateway, memory, approvals, audit, h
     const planId = randomId('plan');
     const plan = { planId, understanding, steps, doneCount: 0 };
     emit('plan/created', { planId, understanding, steps, requiresApproval, turnId });
-    
-    
+    // Persistence is the surface's job (onPlan) — chat routes store a plan
+    // message, background runs store it on the run row. Never both.
     onPlan?.({ planId, understanding, steps, status: 'pending' });
 
     if (requiresApproval) {

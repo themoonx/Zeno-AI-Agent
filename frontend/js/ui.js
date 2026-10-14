@@ -1,5 +1,5 @@
-
-
+// DOM + UI primitives: element builder, toasts, modals, dropdown menus,
+// confirmation dialogs, clipboard.
 
 export function h(tag, attrs = {}, ...children) {
   const el = document.createElement(tag);
@@ -27,7 +27,7 @@ function append(el, children) {
   }
 }
 
-
+// ── toasts ───────────────────────────────────────────────────────────────────
 import { icon } from './icons.js';
 
 export function toast(message, type = 'info', { timeout = 4200 } = {}) {
@@ -44,7 +44,7 @@ export function toast(message, type = 'info', { timeout = 4200 } = {}) {
   return remove;
 }
 
-
+// ── modal manager ────────────────────────────────────────────────────────────
 const modalStack = [];
 
 export function openModal({ title, subtitle, body, footer, wide = false, onClose = null }) {
@@ -120,7 +120,7 @@ export function confirmDialog({ title, message, confirmLabel = 'Confirm', danger
   });
 }
 
-
+// ── dropdown menus ───────────────────────────────────────────────────────────
 let openMenuCleanup = null;
 
 export function closeMenu() {
@@ -128,7 +128,9 @@ export function closeMenu() {
   openMenuCleanup = null;
 }
 
-
+/**
+ * anchor: element to attach to. build(el, close): fills the .menu element.
+ */
 export function openDropdown(anchor, build, { align = 'start', width } = {}) {
   closeMenu();
   const menu = h('div', { class: 'menu', role: 'menu' });
@@ -166,7 +168,7 @@ export function openDropdown(anchor, build, { align = 'start', width } = {}) {
   return openMenuCleanup;
 }
 
-
+// ── clipboard ────────────────────────────────────────────────────────────────
 export async function copyText(text) {
   try {
     await navigator.clipboard.writeText(text);
@@ -182,7 +184,7 @@ export async function copyText(text) {
   }
 }
 
-
+// ── formatting ───────────────────────────────────────────────────────────────
 export function timeAgo(ts) {
   if (!ts) return '';
   const diff = Date.now() - ts;

@@ -1,18 +1,18 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+// Transactional workspace snapshots — file mutations become recoverable
+// instead of irreversible.
+//
+// Design (content store, no Git requirement):
+//   blobs/<sha256>        content-addressed file contents, deduped
+//   snapshots/<id>.json   manifest: [{path, hash, size, mode}] + label/meta
+//
+// Captures happen BEFORE a mutating capability runs (executor hook), so a
+// failed edit, a wrong overwrite, or a bad delete can be undone. Restores
+// write manifest contents back and remove files that were created since.
+//
+// Hardlink dedup: unchanged files are linked rather than copied where the OS
+// supports it; otherwise they are copied. Skips node_modules/.git and caps
+// per-file size + file count. Every path is resolved inside the workspace root
+// — traversal attempts are rejected, not sanitized.
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -49,22 +49,25 @@ export function createSnapshotService({ repos, telemetry }) {
     return { hash: crypto.createHash('sha256').update(buf).digest('hex'), bytes: buf.length, buf };
   }
 
-  
+  /** Store a blob (deduped by content hash); returns the hash. */
   async function putBlob(userId, buf, hash) {
     const dir = path.join(storeFor(userId), 'blobs');
     await fs.mkdir(dir, { recursive: true });
     const dest = path.join(dir, hash);
     try {
       await fs.access(dest);
-      return hash; 
+      return hash; // already stored
     } catch {
-      
+      /* not yet stored */
     }
     await fs.writeFile(dest, buf);
     return hash;
   }
 
-  
+  /**
+   * Capture the current state of the workspace as a snapshot.
+   * Returns { snapshotId, files, bytes } or null when nothing changed / skipped.
+   */
   async function capture(userId, { sessionId = null, runId = null, label = 'checkpoint', emit = null } = {}) {
     const root = rootFor(userId);
     await fs.mkdir(root, { recursive: true });
@@ -96,7 +99,7 @@ export function createSnapshotService({ repos, telemetry }) {
           bytes += len;
           manifest.push({ path: path.relative(root, full).replace(/\\/g, '/'), hash, size: stat.size, mode: stat.mode & 0o777 });
         } catch {
-          
+          /* unreadable files are skipped, never fatal */
         }
       }
     }
@@ -118,13 +121,13 @@ export function createSnapshotService({ repos, telemetry }) {
     return JSON.parse(raw);
   }
 
-  
+  /** Restore the workspace to a snapshot: rewrite changed files, remove created ones. */
   async function restore(userId, snapshotId, { emit = null, direction = 'restored' } = {}) {
     const snap = await load(userId, snapshotId);
     const root = rootFor(userId);
     const want = new Map(snap.files.map((f) => [f.path, f]));
 
-    
+    // Remove files that exist now but not in the snapshot (created since).
     const current = [];
     const stack = [root];
     while (stack.length && current.length < MAX_FILES * 2) {
@@ -158,9 +161,9 @@ export function createSnapshotService({ repos, telemetry }) {
         const st = await fs.stat(full);
         if (st.isFile()) existing = await hashFile(full);
       } catch {
-        
+        /* missing → will be written */
       }
-      if (existing?.hash === f.hash) continue; 
+      if (existing?.hash === f.hash) continue; // identical content, skip
       const buf = await fs.readFile(blobPath);
       await fs.mkdir(path.dirname(full), { recursive: true });
       await fs.writeFile(full, buf, { mode: f.mode || 0o644 });
@@ -184,7 +187,7 @@ export function createSnapshotService({ repos, telemetry }) {
     }
   }
 
-  
+  /** Does this capability call mutate the workspace? (executor hook) */
   function shouldCapture(tool, args) {
     if (!tool) return false;
     if (!MUTATING_TOOLS.has(tool.name)) return false;
@@ -192,7 +195,7 @@ export function createSnapshotService({ repos, telemetry }) {
     return !!args?.path;
   }
 
-  
+  /** Capture before a mutation, publishing a checkpoint event. */
   async function captureBefore(userId, { sessionId, runId, tool, args, emit }) {
     try {
       const rec = await capture(userId, { sessionId, runId, label: `${tool} ${args?.path || ''}`.trim(), emit });
@@ -203,16 +206,16 @@ export function createSnapshotService({ repos, telemetry }) {
     }
   }
 
-  
-  
-  
-  
-  
-  
-  
-  
-  const pointers = new Map(); 
-  const redoStacks = new Map(); 
+  // ── undo / redo stacks ─────────────────────────────────────────────────────
+  // The undo stack is DERIVED FROM THE SESSION EVENT LOG: every pre-mutation
+  // capture appends a `snapshot/captured` event, so the undoable checkpoints
+  // survive restarts and stay reconstructable — consistent with the kernel
+  // being the source of truth. What stays in memory is the undo POINTER (how
+  // many checkpoints are live) and the transient redo stack (a redo pointer
+  // cannot survive new mutations anyway). Capture events for redo/undo
+  // bookkeeping are written with emit:null so they never enter the log.
+  const pointers = new Map(); // sessionId -> live checkpoint count
+  const redoStacks = new Map(); // sessionId -> [snapshotId]
 
   function checkpoints(sessionId) {
     if (!sessionId) return [];
@@ -229,7 +232,8 @@ export function createSnapshotService({ repos, telemetry }) {
     return p;
   }
 
-  
+  /** Called by the executor after a successful workspace mutation. A new real
+   *  checkpoint invalidates the redo stack and makes every capture undoable. */
   function recordCheckpoint(sessionId, snapshotId) {
     if (!sessionId || !snapshotId) return;
     redoStacks.delete(sessionId);
@@ -241,7 +245,7 @@ export function createSnapshotService({ repos, telemetry }) {
     const pointer = pointerFor(sessionId, list.length);
     if (pointer <= 0) return { ok: false, error: 'Nothing to undo in this session.' };
     const id = list[pointer - 1];
-    
+    // Preserve the current state as a redo point (transient, never logged).
     const before = await capture(userId, { sessionId, label: 'redo-point', emit: null });
     redoStacks.set(sessionId, [...(redoStacks.get(sessionId) || []), before.id]);
     pointers.set(sessionId, pointer - 1);
@@ -257,8 +261,8 @@ export function createSnapshotService({ repos, telemetry }) {
     stack.pop();
     if (stack.length) redoStacks.set(sessionId, stack);
     else redoStacks.delete(sessionId);
-    
-    
+    // Preserve the current state as an undo checkpoint. This one MUST enter
+    // the log: the derived stack is what makes the next undo return here.
     const before = await capture(userId, { sessionId, label: 'undo-point', emit });
     pointers.set(sessionId, checkpoints(sessionId).length);
     const result = await restore(userId, id, { emit, direction: 'redo' });

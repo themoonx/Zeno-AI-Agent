@@ -1,4 +1,4 @@
-
+// Typed application errors mapped to HTTP responses in one place.
 export class AppError extends Error {
   constructor(status, code, message, details) {
     super(message);
@@ -21,14 +21,14 @@ export const errors = {
   internal: (msg = 'Internal server error') => new AppError(500, 'internal', msg),
 };
 
-
+// Map upstream provider errors to a consistent shape.
 export function upstreamFromResponse(providerName, status, bodyText) {
   let detail = bodyText;
   try {
     const parsed = JSON.parse(bodyText);
     detail = parsed?.error?.message || parsed?.message || parsed?.error || bodyText;
   } catch {
-    
+    /* keep raw text */
   }
   if (typeof detail !== 'string') detail = JSON.stringify(detail);
   const trimmed = detail.slice(0, 600);

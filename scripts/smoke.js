@@ -1,6 +1,6 @@
-
-
-
+// End-to-end smoke test: boots a stub OpenAI-compatible provider fixture,
+// then drives the REAL Zeno backend over HTTP — auth, providers, streaming
+// chat, uploads, memory, agent runs with real tool execution, and approvals.
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -32,7 +32,7 @@ async function api(method, p, body, token) {
   let json = null;
   try {
     json = await res.json();
-  } catch {  }
+  } catch { /* stream or empty */ }
   return { status: res.status, json };
 }
 
@@ -68,11 +68,23 @@ async function wait(ms) {
 async function main() {
   console.log('── Zeno AI end-to-end smoke test ──────────────────────────');
 
-  
-  const health = await api('GET', '/health');
-  ok('backend is up', health.status === 200 && health.json?.ok, JSON.stringify(health.json));
+  // 0. Health
+  let health;
+  try {
+    health = await api('GET', '/health');
+  } catch (err) {
+    console.error(`\n❌ Could not connect to Zeno backend at ${BASE}.`);
+    console.error(`Please start the server first in another terminal:\n  npm start\n`);
+    process.exit(1);
+  }
+  if (!health || health.status !== 200 || !health.json?.ok) {
+    console.error(`\n❌ Zeno backend at ${BASE} is not healthy:`, health?.json || health?.status);
+    console.error(`Please ensure the server is running:\n  npm start\n`);
+    process.exit(1);
+  }
+  ok('backend is up', true, JSON.stringify(health.json));
 
-  
+  // Start stub provider fixture
   const stub = spawn(process.execPath, [path.join(import.meta.dirname, 'stub-provider.js')], {
     env: { ...process.env, STUB_PORT: String(STUB_PORT) },
     stdio: 'ignore',
@@ -80,7 +92,7 @@ async function main() {
   await wait(600);
 
   try {
-    
+    // 1. Auth
     const email = `smoke_${Date.now()}@test.dev`;
     const reg = await api('POST', '/auth/register', { email, displayName: 'Smoke Tester', password: 'testpass123' });
     ok('register returns token', reg.status === 201 && !!reg.json?.token);
@@ -89,7 +101,7 @@ async function main() {
     const badLogin = await api('POST', '/auth/login', { email, password: 'wrong-pass' });
     ok('wrong password rejected (401)', badLogin.status === 401);
 
-    
+    // 2. Provider + models
     const prov = await api('POST', '/providers', {
       kind: 'openai-compatible',
       name: 'Stub Provider',
@@ -114,7 +126,7 @@ async function main() {
 
     await api('PATCH', '/settings', { settings: { default_model: { modelId: chatModel.json.model.id }, embedding_model: { modelId: embedModel.json.model.id } } }, token);
 
-    
+    // 3. Streaming chat through the real gateway
     const conv = (await api('POST', '/conversations', { title: 'Smoke chat' }, token)).json.conversation;
     const chatRes = await fetch(BASE + '/api/chat/stream', {
       method: 'POST',
@@ -139,7 +151,7 @@ async function main() {
     ok('assistant message persisted with content', msgs.some((m) => m.role === 'assistant' && m.content.includes('Hello from the stub model')));
     ok('title auto-generated', (await api('GET', `/conversations/${conv.id}`, null, token)).json.conversation.title !== 'New conversation' || conv.title !== 'New conversation');
 
-    
+    // Regenerate
     const regen = await fetch(BASE + '/api/chat/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -150,7 +162,7 @@ async function main() {
     const msgsAfterRegen = (await api('GET', `/conversations/${conv.id}`, null, token)).json.messages;
     ok('regenerate re-slices history', regenDone?.status === 'complete' && msgsAfterRegen.filter((m) => m.role === 'assistant').length === 1);
 
-    
+    // 4. File upload + attachment context
     const fd = new FormData();
     fd.append('files', new Blob([ 'Zeno file content for context injection. '.repeat(20) ], { type: 'text/plain' }), 'notes.txt');
     const up = await fetch(BASE + '/api/files?conversationId=' + conv.id, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd });
@@ -168,7 +180,7 @@ async function main() {
     await readSse(attachRes, (ev) => ev.type === 'done' && (attachDone = ev));
     ok('chat with attachment completes', attachDone?.status === 'complete');
 
-    
+    // 5. UNIFIED MODE: the model itself decides to use a tool inside chat.
     const convU = (await api('POST', '/conversations', { title: 'Unified tool chat' }, token)).json.conversation;
     const unifiedRes = await fetch(BASE + '/api/chat/stream', {
       method: 'POST',
@@ -188,7 +200,7 @@ async function main() {
     const unifiedMsgs = (await api('GET', `/conversations/${convU.id}`, null, token)).json.messages;
     ok('tool rounds persisted for replay', unifiedMsgs.some((m) => m.role === 'tool' && m.attachments?.tool === 'file_write'));
 
-    
+    // 6. UNIFIED MODE with human approval (terminal in chat).
     const convA = (await api('POST', '/conversations', { title: 'Unified approval chat' }, token)).json.conversation;
     const apprRes = await fetch(BASE + '/api/chat/stream', {
       method: 'POST',
@@ -213,13 +225,13 @@ async function main() {
     ok('approved chat tool executed (42)', chatFrames.some((f) => f.type === 'activity' && f.kind === 'tool_result' && (f.output || '').includes('42')));
     ok('unified approval chat completed', chatDone?.status === 'complete');
 
-    
+    // 7. Memory: manual add + semantic search
     await api('POST', '/memory', { kind: 'fact', content: 'User loves pineapple on pizza' }, token);
     await api('POST', '/memory', { kind: 'fact', content: 'User ships code on Fridays' }, token);
     const search = await api('POST', '/memory/search', { query: 'pizza preference' }, token);
     ok('semantic search ranks relevant memory first', search.json.results.length > 0 && search.json.results[0].content.includes('pizza'), JSON.stringify(search.json.results?.[0]));
 
-    
+    // 6. Agent run with a REAL tool execution (file_write in the workspace)
     const run = (await api('POST', '/runs', { task: 'USE_FILE_TOOL: write hello.txt' }, token)).json.run;
     ok('agent run accepted (202)', !!run?.id);
 
@@ -241,7 +253,7 @@ async function main() {
     );
     ok('unknown tool failure surfaced to the model, run still completed', finalRun.status === 'completed' || events.some((e) => e.type === 'tool/completed' && e.data.ok === false));
 
-    
+    // 7. Terminal tool + approval gate (real approval round-trip)
     const run2 = (await api('POST', '/runs', { task: 'USE_TERMINAL: compute' }, token)).json.run;
     let approvalEvent = null;
     let run2Final = null;
@@ -267,16 +279,16 @@ async function main() {
     const toolResults2 = (await api('GET', `/runs/${run2.id}`, null, token)).json.events.filter((e) => e.type === 'tool/completed');
     ok('terminal executed real command (6*7=42)', toolResults2.some((e) => (e.data.output || '').includes('42')), JSON.stringify(toolResults2[0]?.data?.output || '').slice(0, 200));
 
-    
+    // 8. Embeddings-backed semantic memory via stub embed model
     const mem2 = await api('POST', '/memory', { kind: 'fact', content: 'Wears a red scarf in winter' }, token);
     ok('memory stored with embedding', mem2.json.memory?.hasEmbedding === true, JSON.stringify(mem2.json.memory));
 
-    
+    // 9. Auth isolation: another user cannot read our conversations
     const reg2 = await api('POST', '/auth/register', { email: `other_${Date.now()}@test.dev`, displayName: 'Other', password: 'testpass123' });
     const convAccess = await api('GET', `/conversations/${conv.id}`, null, reg2.json.token);
     ok('cross-user access denied', convAccess.status === 404);
 
-    
+    // 10. SSE live stream for a run (via events endpoint)
     const run3 = (await api('POST', '/runs', { task: 'USE_FILE_TOOL: write live.txt' }, token)).json.run;
     const sseRes = await fetch(`${BASE}/api/runs/${run3.id}/events`, { headers: { Authorization: `Bearer ${token}` } });
     ok('run SSE endpoint streams', sseRes.status === 200 && (sseRes.headers.get('content-type') || '').includes('text/event-stream'));

@@ -1,8 +1,8 @@
-
-
-
-
-
+// HTTP plugin connector: a user-configured endpoint. The model fills the
+// plugin's fixed inputSchema (stored schemaSpec) with JSON arguments; the
+// connector POSTs exactly { arguments } to the configured endpoint. The
+// endpoint URL, method, and schema are fixed server-side config — the model
+// can never change where a request goes or what shape it has.
 import { errors } from '../core/errors.js';
 import { requestViaPublicInternet } from './fetch.js';
 
@@ -34,7 +34,7 @@ export function makeHttpPluginTool(row, secret = null, transport = requestViaPub
       try {
         parsed = JSON.parse(text);
       } catch {
-        
+        /* keep raw text */
       }
     }
     if (!res.ok) {

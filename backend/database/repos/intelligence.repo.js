@@ -1,12 +1,12 @@
-
-
-
-
+// Intelligence repo — the usage ledger (cost tracking) and routing stats
+// (learning execution policy). Both are per-user, bounded, and inspectable;
+// the ledger is written per completed model call, the stats are day-grain
+// aggregates upserted at turn end.
 import { now } from '../helpers.js';
 
 export function createIntelligenceRepo(db) {
   return {
-    
+    // ── usage ledger ───────────────────────────────────────────────────────
     recordUsage({ id, userId, sessionId, runId, turnId, modelRowId, modelId, providerId, purpose, inputTokens, outputTokens, estCostUsd }) {
       const ts = now();
       const day = new Date(ts).toISOString().slice(0, 10);
@@ -61,7 +61,7 @@ export function createIntelligenceRepo(db) {
       return { today, month: monthRow, byDay, byModel };
     },
 
-    
+    // ── routing stats (learning execution policy) ──────────────────────────
     getRoutingStatsRow(userId, day, taskType) {
       return db.get('SELECT * FROM routing_stats WHERE user_id = ? AND day = ? AND task_type = ?', [userId, day, taskType]);
     },

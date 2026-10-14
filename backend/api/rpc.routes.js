@@ -1,5 +1,5 @@
-
-
+// Headless JSON-RPC endpoint — POST /api/rpc. Same auth as every other API
+// route (Bearer token or session cookie); same kernel functions as the web UI.
 import { Router } from 'express';
 import { createRpcHandler } from '../kernel/rpc.js';
 

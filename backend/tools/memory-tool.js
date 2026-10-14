@@ -1,5 +1,5 @@
-
-
+// Memory search tool — relevance-ranked recall over the user's persistent
+// memory. Scores blend semantic similarity with recency, importance, and usage.
 export const memorySearchTool = {
   name: 'memory_search',
   displayName: 'Memory Search',

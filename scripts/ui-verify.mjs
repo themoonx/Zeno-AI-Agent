@@ -1,9 +1,9 @@
-
-
-
-
-
-
+// Browser verification harness. Drives real Chrome over the DevTools Protocol
+// (no npm deps — uses Node's global WebSocket) to verify the UI actually works:
+// the skip link, the sidebar geometry and icon alignment, Settings tabs, and
+// the harness capability surface. Also captures screenshots.
+//
+// Usage: node scripts/_ui-verify.mjs [baseUrl]
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -45,13 +45,13 @@ async function debuggerUrl() {
       const res = await fetch(`http://127.0.0.1:${PORT}/json/version`);
       const json = await res.json();
       if (json.webSocketDebuggerUrl) return json.webSocketDebuggerUrl;
-    } catch {  }
+    } catch { /* not up yet */ }
     await sleep(250);
   }
   throw new Error('Chrome did not start');
 }
 
-
+// ── minimal CDP client ───────────────────────────────────────────────────────
 class CDP {
   constructor(ws) {
     this.ws = ws;
@@ -96,7 +96,7 @@ async function connect(url) {
   return new CDP(ws);
 }
 
-
+// ── test plumbing ────────────────────────────────────────────────────────────
 let passed = 0;
 let failed = 0;
 const failures = [];
@@ -111,7 +111,7 @@ function ok(name, cond, extra = '') {
   }
 }
 
-
+// Stub model provider for the live agent-flow section (Plan Mode + tools).
 let stubProvider = null;
 function ensureStubProvider() {
   if (stubProvider) return;
@@ -154,7 +154,7 @@ async function main() {
 
   async function goto(url) {
     await S('Page.navigate', { url });
-    
+    // Wait for the app shell to settle: either the auth card or the workspace.
     for (let i = 0; i < 60; i++) {
       await sleep(250);
       const ready = await evaluate(
@@ -170,11 +170,11 @@ async function main() {
     fs.writeFileSync(path.join(OUT, `${name}.png`), Buffer.from(data, 'base64'));
   }
 
-  
+  // 1. Load + authenticate through the real UI.
   await goto(BASE);
   let authVisible = await evaluate('!!document.querySelector(".auth-card")');
   if (!authVisible) {
-    
+    // Surface whatever state we DID get so failures are diagnosable.
     const state = await evaluate(`(() => ({
       ready: document.readyState,
       boot: !!document.querySelector(".boot-screen"),
@@ -212,7 +212,7 @@ async function main() {
     console.log('    page text:', (await evaluate('document.body.innerText')).slice(0, 300));
   }
 
-  
+  // ── 2. Skip link ─────────────────────────────────────────────────────────
   const skip = await evaluate(`(() => {
     const a = document.querySelector('.skip-link');
     if (!a) return { missing: true };
@@ -239,7 +239,7 @@ async function main() {
   ok('sidebar has its full width', skip.sidebarWidth >= 260, `w=${skip.sidebarWidth}`);
   ok('skip link parked off-screen when unfocused', skip.offscreen === true, JSON.stringify(skip));
 
-  
+  // Focus it the way a keyboard user would (Tab from the top of the document).
   await evaluate('document.body.focus(); document.querySelector(".skip-link").focus();');
   await sleep(250);
   const focused = await evaluate(`(() => {
@@ -255,7 +255,7 @@ async function main() {
   ok('skip link is revealed on focus', focused.visible && focused.isFocused, JSON.stringify(focused));
   await shot('01-skip-link-focused');
 
-  
+  // Click it and confirm focus lands on main content.
   await evaluate('document.querySelector(".skip-link").click()');
   await sleep(350);
   const afterSkip = await evaluate(`(() => {
@@ -268,7 +268,7 @@ async function main() {
   })()`);
   ok('clicking skip link moves focus into #main-content', afterSkip.focused, JSON.stringify(afterSkip));
 
-  
+  // ── 3. Sidebar geometry & icon alignment ─────────────────────────────────
   const sidebar = await evaluate(`(() => {
     const links = [...document.querySelectorAll('.sidebar-nav .sidebar-link')];
     const rows = links.map((l) => {
@@ -314,7 +314,7 @@ async function main() {
     sidebar.rows.map((r) => `${r.text}:${r.iconCenterY}/${r.rowCenterY}`).join(' '));
   await shot('02-sidebar');
 
-  
+  // Collapse / expand round trip.
   await evaluate(`document.querySelector('.topbar [aria-controls="workspace-sidebar"]').click()`);
   await sleep(500);
   const collapsed = await evaluate(`(() => {
@@ -327,7 +327,7 @@ async function main() {
   const expanded = await evaluate('Math.round(document.querySelector(".sidebar").getBoundingClientRect().width)');
   ok('sidebar expands back to full width', expanded >= 260, `w=${expanded}`);
 
-  
+  // ── 4. Tools controls moved into Settings ────────────────────────────────
   const mainPageTools = await evaluate(`(() => {
     const topbar = document.querySelector('.topbar');
     const composer = document.querySelector('.composer-bar');
@@ -340,7 +340,7 @@ async function main() {
   ok('no Tools button in the top bar', mainPageTools.topbarTools === false);
   ok('no Tools button in the composer', mainPageTools.composerTools === false);
 
-  
+  // Navigate to Settings and verify the tabs.
   await evaluate(`location.hash = '#/settings'`);
   await sleep(900);
   const settingsTabs = await evaluate(`[...document.querySelectorAll('.settings-tab')].map((t) => t.textContent.trim())`);
@@ -355,7 +355,7 @@ async function main() {
   ok('Settings includes Cost & Usage tab', settingsTabs.some((t) => /Cost & Usage/i.test(t)), JSON.stringify(settingsTabs));
   await shot('03-settings-general');
 
-  
+  // Intelligence tab: Jev decision layer + decision preview + stats.
   await evaluate(`location.hash = '#/settings/intelligence'`);
   await sleep(1100);
   const intelTab = await evaluate(`(() => ({
@@ -368,7 +368,7 @@ async function main() {
     ['Request routing (Jev decision layer)', 'Model routing', 'Verification', 'Research workflow'].every((h) => intelTab.heading.includes(h)) && intelTab.rows >= 8, JSON.stringify(intelTab));
   await shot('03c-settings-intelligence');
 
-  
+  // Cost & Usage tab: budgets + spend summary.
   await evaluate(`location.hash = '#/settings/cost'`);
   await sleep(1100);
   const costTab = await evaluate(`(() => ({
@@ -378,7 +378,7 @@ async function main() {
   ok('cost tab shows budgets and spend sections', costTab.heading.includes('Budgets') && costTab.heading.includes('Spend') && costTab.rows >= 4, JSON.stringify(costTab));
   await shot('03d-settings-cost');
 
-  
+  // Permissions tab: mode cards + rules + preview.
   await evaluate(`location.hash = '#/settings/permissions'`);
   await sleep(1100);
   const permTab = await evaluate(`(() => ({
@@ -391,7 +391,7 @@ async function main() {
   ok('permissions tab runs a live decision preview', /ALLOW|ASK|DENY/.test(permTab.preview || ''), JSON.stringify(permTab));
   await shot('03b-settings-permissions');
 
-  
+  // Environments tab renders the pairing surface.
   await evaluate(`location.hash = '#/settings/environments'`);
   await sleep(900);
   const envTab = await evaluate(`(() => ({
@@ -400,7 +400,7 @@ async function main() {
   }))()`);
   ok('environments tab shows execution environments + local agents', envTab.heading.includes('Execution environments') && envTab.heading.includes('Local agents') && envTab.rows >= 3, JSON.stringify(envTab));
 
-  
+  // Security tab shows sessions + audit.
   await evaluate(`location.hash = '#/settings/security'`);
   await sleep(900);
   const secTab = await evaluate(`(() => ({
@@ -410,7 +410,7 @@ async function main() {
   ok('security tab shows sessions and audit log', secTab.heading.includes('Active sessions') && secTab.heading.includes('Audit log') && secTab.sessions >= 1, JSON.stringify(secTab));
 
 
-  
+  // ── 5. Harness capability surface ────────────────────────────────────────
   await evaluate(`location.hash = '#/settings/tools'`);
   await sleep(1200);
   const harness = await evaluate(`(() => {
@@ -430,7 +430,7 @@ async function main() {
     ['Tools', 'Skills', 'Plugins', 'Orchestration'].every((t) => harness.tabs.includes(t)), JSON.stringify(harness.tabs));
   await shot('04-harness-tools');
 
-  
+  // Skills tab.
   await evaluate(`[...document.querySelectorAll('.tabs .tab')].find((t) => t.textContent.trim() === 'Skills').click()`);
   await sleep(800);
   const skills = await evaluate(`(() => {
@@ -445,7 +445,7 @@ async function main() {
   ok('skills tab offers creating a skill', skills.hasNew);
   await shot('05-harness-skills');
 
-  
+  // Orchestration tab + live preview.
   await evaluate(`[...document.querySelectorAll('.tabs .tab')].find((t) => t.textContent.trim() === 'Orchestration').click()`);
   await sleep(700);
   const orch = await evaluate(`(() => {
@@ -457,7 +457,7 @@ async function main() {
     orch.rows.some((r) => /Automatic orchestration/i.test(r)) && orch.rows.some((r) => /skill/i.test(r)), JSON.stringify(orch.rows));
   ok('orchestration tab offers a live preview', orch.hasProbe);
 
-  
+  // Drive the preview and confirm the matching engine responds.
   await evaluate(`(() => {
     const el = document.querySelector('input[placeholder*="preview"]');
     const proto = Object.getPrototypeOf(el);
@@ -470,7 +470,7 @@ async function main() {
     /Deep Research/i.test(probeText), JSON.stringify(probeText.slice(0, 160)));
   await shot('06-harness-orchestration');
 
-  
+  // ── 6. Connections now live in Settings ──────────────────────────────────
   await evaluate(`location.hash = '#/settings/connections'`);
   await sleep(1100);
   const conn = await evaluate(`(() => {
@@ -483,7 +483,7 @@ async function main() {
   ok('connections panel offers adding an MCP/HTTP connection', conn.add);
   ok('settings stays the active nav section', conn.settingsActive);
 
-  
+  // Legacy #/connectors links must land on the Settings tools tab.
   await goto(`${BASE}/#/connectors`);
   await sleep(1200);
   const legacy = await evaluate(`(() => ({
@@ -494,7 +494,7 @@ async function main() {
   ok('legacy #/connectors redirects into Settings', legacy.hash.startsWith('#/settings'), JSON.stringify(legacy));
   await shot('07-settings-connections');
 
-  
+  // ── 7. Chat surface still works ──────────────────────────────────────────
   await goto(`${BASE}/#/settings/providers`);
   await sleep(900);
   const providers = await evaluate(`(() => ({
@@ -517,14 +517,14 @@ async function main() {
   ok('chat hero suggestions present', chat.suggestions >= 3, `n=${chat.suggestions}`);
   await shot('09-chat');
 
-  
+  // Light theme sanity.
   await evaluate(`document.documentElement.dataset.theme = 'light'`);
   await sleep(500);
   await shot('10-chat-light');
   await evaluate(`document.documentElement.dataset.theme = 'dark'`);
 
-  
-  
+  // ── 7b. Agent control surface: permission chip, Plan Mode, tool cards, and
+  //       the VS Code-style file preview — driven through the real UI.
   const agent = await evaluate(`(() => ({
     permChip: document.querySelector('.composer-bar .perm-chip .label')?.textContent.trim(),
     planChip: !!document.querySelector('.composer-bar .plan-chip'),
@@ -532,7 +532,7 @@ async function main() {
   ok('composer shows the permission-mode chip (default Ask Before Change)', agent.permChip === 'Ask Before Change', JSON.stringify(agent));
   ok('composer shows the Plan Mode toggle', agent.planChip);
 
-  
+  // Switch mode via the menu.
   await evaluate(`document.querySelector('.composer-bar .perm-chip').click()`);
   await sleep(400);
   const permMenu = await evaluate(`(() => ({
@@ -546,20 +546,20 @@ async function main() {
   const permNow = await evaluate(`document.querySelector('.composer-bar .perm-chip .label')?.textContent.trim()`);
   ok('switching mode updates the chip', permNow === 'Workspace Edit', permNow);
 
-  
+  // Mode persists across reloads (server-side setting).
   await goto(`${BASE}/#/chat`);
   await sleep(900);
   const permPersisted = await evaluate(`document.querySelector('.composer-bar .perm-chip .label')?.textContent.trim()`);
   ok('permission mode persists after reload', permPersisted === 'Workspace Edit', permPersisted);
 
-  
+  // Switch back to Ask Before Change so the plan approval flow pauses.
   await evaluate(`document.querySelector('.composer-bar .perm-chip').click()`);
   await sleep(300);
   await evaluate(`[...document.querySelectorAll('.menu .perm-option')].find((o) => o.textContent.includes('Ask Before Change'))?.click()`);
   await sleep(400);
 
-  
-  
+  // Wire a stub provider through the in-page session, then run a real
+  // Plan-Mode turn end-to-end.
   await evaluate(`(async () => {
     const j = (r) => r.json();
     const prov = await fetch('/api/providers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'openai-compatible', name: 'UI Stub', baseUrl: 'http://127.0.0.1:9103/v1', apiKey: 'sk-stub-ui', test: true }) }).then(j);
@@ -568,8 +568,8 @@ async function main() {
     return true;
   })()`);
   await sleep(400);
-  
-  
+  // Real reload so the frontend store picks up the new provider + default model
+  // (hash navigation would stay in-document and skip the boot data load).
   await evaluate(`location.reload()`);
   await sleep(1500);
   for (let i = 0; i < 40; i++) {
@@ -579,13 +579,13 @@ async function main() {
   const modelReady = await evaluate(`document.querySelector('.model-chip .label')?.textContent.trim()`);
   ok('model chip resolves the registered default model', modelReady === 'Stub Chat', modelReady);
 
-  
+  // Toggle Plan Mode ON via the chip.
   await evaluate(`document.querySelector('.composer-bar .plan-chip').click()`);
   await sleep(400);
   const planOn = await evaluate(`document.querySelector('.composer-bar .plan-chip').classList.contains('on')`);
   ok('Plan Mode toggle switches on', planOn);
 
-  
+  // Send a file-writing request through the composer (the stub honors .txt names).
   await evaluate(`(() => {
     const ta = document.querySelector('.composer textarea');
     const proto = Object.getPrototypeOf(ta);
@@ -595,7 +595,7 @@ async function main() {
     return true;
   })()`);
 
-  
+  // Wait for the plan card + thinking indicator while approval is pending.
   let sawPlan = null;
   for (let i = 0; i < 60; i++) {
     await sleep(250);
@@ -612,7 +612,7 @@ async function main() {
   if (sawPlan?.thinking) await shot('12-thinking-and-plan');
   ok('thinking indicator visible while the turn works', sawPlan?.thinking === true, JSON.stringify(sawPlan));
 
-  
+  // Approve the plan through the plan card itself.
   await evaluate(`document.querySelector('.plan-card .plan-actions .btn.primary')?.click()`);
   let sawTool = null;
   for (let i = 0; i < 60; i++) {
@@ -633,7 +633,7 @@ async function main() {
   ok('file card shows the written file name', /preview\.txt/.test(sawTool?.title || ''), JSON.stringify(sawTool));
   await shot('13-agent-activity');
 
-  
+  // Open the VS Code-style preview.
   await evaluate(`document.querySelector('.activity-view')?.click()`);
   await sleep(600);
   const preview = await evaluate(`(() => ({
@@ -650,11 +650,11 @@ async function main() {
   await sleep(400);
   ok('preview closes', !(await evaluate(`!!document.querySelector('.file-preview')`)));
 
-  
+  // Plan chip toggles back off.
   await evaluate(`document.querySelector('.composer-bar .plan-chip').click()`);
   await sleep(300);
 
-  
+  // ── Mobile: the sidebar is an overlay drawer at narrow widths ────────────
   await S('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
   await goto(`${BASE}/#/chat`);
   await sleep(800);
@@ -690,7 +690,7 @@ async function main() {
   ok('mobile: scrim appears behind the drawer', mobileOpen.scrimVisible);
   await shot('11-mobile-sidebar-open');
 
-  
+  // Escape closes the drawer.
   await evaluate(`
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   `);
@@ -700,8 +700,8 @@ async function main() {
   await S('Emulation.clearDeviceMetricsOverride');
   await sleep(400);
 
-  
-  
+  // ── 8. Console hygiene ───────────────────────────────────────────────────
+  // The signed-out /auth/me probe legitimately logs a 401 network line.
   const realErrors = consoleErrors.filter((e) => !/favicon|net::ERR_|404|\(401\)|Failed to load resource/i.test(e));
   ok('no console errors during the whole run', realErrors.length === 0, JSON.stringify(realErrors.slice(0, 4)));
 

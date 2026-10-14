@@ -2,7 +2,7 @@ import { j, pj, now } from '../helpers.js';
 
 export function createUsersRepo(db) {
   return {
-    
+    // ── users ──────────────────────────────────────────────────────────────
     createUser({ id, email, displayName, passwordHash }) {
       db.run(
         'INSERT INTO users (id, email, display_name, password_hash, created_at) VALUES (?, ?, ?, ?, ?)',
@@ -19,7 +19,7 @@ export function createUsersRepo(db) {
       return db.get('SELECT COUNT(*) AS c FROM users').c;
     },
 
-    
+    // ── sessions ───────────────────────────────────────────────────────────
     createSession({ tokenHash, userId, expiresAt, userAgent }) {
       db.run('INSERT INTO sessions (token_hash, user_id, created_at, expires_at, user_agent) VALUES (?, ?, ?, ?, ?)', [
         tokenHash,
@@ -55,7 +55,7 @@ export function createUsersRepo(db) {
       db.run('DELETE FROM sessions WHERE expires_at < ?', [now()]);
     },
 
-    
+    // ── settings ───────────────────────────────────────────────────────────
     getSetting(userId, key) {
       const row = db.get('SELECT value FROM settings WHERE user_id = ? AND key = ?', [userId, key]);
       return row ? pj(row.value) : null;

@@ -96,8 +96,8 @@ function buildShell() {
   const nav = h('nav', { class: 'sidebar-nav', 'aria-label': 'Main navigation' });
   const navWorkspace = h('nav', { class: 'sidebar-nav', 'aria-label': 'Workspace' });
   const body = h('div', { class: 'sidebar-body' });
-  
-  
+  // Tools & connections now live inside Settings; the route is kept working for
+  // existing links/bookmarks and opens the matching Settings tab.
   const labels = { chat: 'Chats', projects: 'Projects', connectors: 'Tools & connections', providers: 'Providers & models', files: 'Files', memory: 'Memory', settings: 'Settings' };
   const buttons = new Map();
   function navigate(next, id) {
@@ -109,8 +109,8 @@ function buildShell() {
   const newChat = () => navigate('chat');
 
   const sidebarTitle = h('span', { text: 'Zeno' });
-  
-  
+  // The conversation list gets its own container so navigation and content can
+  // be re-rendered independently (and the nav is never wiped by a list refresh).
   const listBody = h('div', { class: 'sidebar-list' });
   sidebar.append(h('div', { class: 'sidebar-brand' },
     h('button', { class: 'brand-link', onclick: newChat, 'aria-label': 'Zeno home' }, h('span', { html: zenoMark(24) }), sidebarTitle),
@@ -119,8 +119,8 @@ function buildShell() {
       h('button', { class: 'sidebar-link', onclick: openPalette }, h('span', { html: icon('search') }), h('span', { text: 'Search chats' }), h('span', { class: 'kbd', text: 'Ctrl K' }))),
     nav, h('div', { class: 'sidebar-group-label', text: 'Workspace' }), navWorkspace, body);
   body.append(listBody);
-  
-  
+  // Primary destinations, then a labelled workspace group. The group label is
+  // what makes a nine-item sidebar readable instead of a flat wall of links.
   for (const [key, glyph] of [['chat', 'chat'], ['projects', 'folder']]) {
     const button = h('button', { class: 'sidebar-link', onclick: () => navigate(key) }, h('span', { html: icon(glyph) }), h('span', { text: labels[key] }));
     buttons.set(key, button);
@@ -158,9 +158,9 @@ function buildShell() {
   h('span', { class: 'account-copy' }, h('strong', { text: user?.displayName || 'My account' }), h('span', { text: 'Personal workspace' })), h('span', { html: icon('chevronDown') }));
   sidebar.append(h('div', { class: 'sidebar-foot' }, settingsButton, account));
 
-  
-  
-  
+  // Skip link: a real in-page anchor so it works with no JS and with keyboard
+  // only. It is position:fixed in CSS — as a flex child of .app it would
+  // otherwise push the sidebar sideways.
   const skipLink = h('a', { class: 'skip-link', href: '#main-content', text: 'Skip to content', onclick: (e) => {
     e.preventDefault();
     const target = main;
@@ -185,8 +185,8 @@ function buildShell() {
     document.title = `${title} — Zeno`;
     topbar.replaceChildren(h('button', { class: 'icon-btn', 'aria-label': 'Toggle sidebar', title: 'Toggle sidebar (Ctrl+B)', 'aria-controls': 'workspace-sidebar', html: icon('panel'), onclick: toggleSidebar }),
       h('div', { class: 'topbar-title ellipsis', text: title }), h('div', { class: 'spacer' }));
-    
-    
+    // Capabilities are configured in Settings, not surfaced here — the chat
+    // page stays a conversation surface, not a control panel.
     syncSidebar();
   }
   function route() {
@@ -197,8 +197,8 @@ function buildShell() {
       id = null;
       history.replaceState(null, '', '#/chat');
     }
-    
-    
+    // Legacy/other-surface links to #/connectors land on the Settings tab that
+    // now owns tools and connections.
     let settingsTab = null;
     if (next === 'connectors') {
       next = 'settings';
@@ -239,8 +239,8 @@ function buildShell() {
   const unsubscribers = ['conversations', 'projects'].map((key) => store.subscribe(key, refreshSidebar));
   unsubscribers.push(store.subscribe('currentConversationId', () => { refreshSidebar(); refreshTopbar(); }));
   window.addEventListener('hashchange', route);
-  
-  
+  // Back/Forward: pushState-based URL changes (settings tabs) fire popstate,
+  // not hashchange — route() re-reads the URL either way.
   window.addEventListener('popstate', route);
   window.addEventListener('resize', syncSidebar);
   window.addEventListener('zeno:new-chat', newChat);

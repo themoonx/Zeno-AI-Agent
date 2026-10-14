@@ -1,6 +1,6 @@
-
-
-
+// Skills service — CRUD for user-authored skills, merged with the built-ins
+// that ship on disk. Kept separate from the capability aggregator so each file
+// has one job.
 import { randomId } from '../core/crypto.js';
 import { errors } from '../core/errors.js';
 import { validate } from '../core/validate.js';
@@ -13,7 +13,7 @@ export function createSkillService({ repos, audit }) {
     return repos.skills.listSkills(userId).map((s) => ({ ...s, source: s.source || 'user' }));
   }
 
-  
+  /** Built-ins first so the shipped method is the default for a given slug. */
   function all(userId) {
     const builtin = builtinSkills().map((s) => ({ ...s, id: s.id, source: 'builtin' }));
     const builtinSlugs = new Set(builtin.map((s) => s.slug));

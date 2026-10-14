@@ -1,12 +1,12 @@
-
-
-
-
-
-
-
-
-
+// Capability executor — THE single pipeline every tool call flows through,
+// regardless of origin (built-in, MCP, HTTP plugin, plugin pack, local bridge):
+//
+//   resolve → policy check → approval if required → execute (timeout/cancel)
+//   → observe (status, duration, file preview) → post-process (hooks, audit)
+//
+// Replaces the per-engine execution code: the chat orchestrator and the
+// background runtime both call this, so permissions, gating, observation, and
+// audit behave identically everywhere.
 import { config } from '../core/config.js';
 
 const OUTPUT_CAP = () => config.agent.maxToolOutputChars;
@@ -55,7 +55,12 @@ function languageFor(p) {
 }
 
 export function createCapabilityExecutor({ repos, approvals, audit, policy, snapshots, telemetry }) {
-  
+  /**
+   * Execute one capability call under the full pipeline.
+   * ctx: { tool, args, callId, userId, runId, sessionId, scopeKey, conversationId,
+   *        mode, signal, emit, memory }
+   * Returns { ok, denied?, output, file?, displayName? } — `output` is the model-facing JSON.
+   */
   async function execute({ tool, args, callId, userId, runId, sessionId = null, scopeKey = null, conversationId = null, mode = 'ask', signal, emit, memory }) {
     if (!tool) {
       const output = JSON.stringify({ ok: false, error: 'Unknown capability' });
@@ -63,7 +68,7 @@ export function createCapabilityExecutor({ repos, approvals, audit, policy, snap
       return { ok: false, output };
     }
 
-    
+    // ── policy ───────────────────────────────────────────────────────────
     const verdict = await policy.evaluate({ userId, tool, args, mode });
     telemetry?.permissionDecision({ userId, sessionId, runId, tool: tool.name, decision: verdict.decision, reason: verdict.reason });
     if (verdict.decision === 'deny') {
@@ -72,7 +77,7 @@ export function createCapabilityExecutor({ repos, approvals, audit, policy, snap
       return { ok: false, denied: true, output };
     }
 
-    
+    // ─ approval ("ask") ──────────────────────────────────────────────────
     if (verdict.decision === 'ask') {
       const hasStanding = repos.runs.hasStanding(runId, tool.name) || (!tool.connectorId && !tool.pluginId && repos.runs.hasStandingScope(userId, scopeKey, tool.name));
       if (!hasStanding) {
@@ -91,22 +96,22 @@ export function createCapabilityExecutor({ repos, approvals, audit, policy, snap
       }
     }
 
-    
+    // ── snapshot: capture BEFORE any workspace mutation ───────────────────
     let snapshotId = null;
     if (snapshots?.shouldCapture(tool, args)) {
       snapshotId = await snapshots.captureBefore(userId, { sessionId, runId, tool: tool.name, args, emit });
     }
 
-    
+    // ── execute ───────────────────────────────────────────────────────────
     emit?.('tool/started', { callId, tool: tool.name, displayName: tool.displayName, arguments: scrubArgs(tool, args), sensitive: !!tool.sensitive, autoApproved: verdict.decision === 'allow' && !!tool.sensitive });
     const started = Date.now();
     try {
       const timeoutSignal = AbortSignal.any?.([signal, AbortSignal.timeout(tool.timeoutMs || config.agent.toolTimeoutMs)].filter(Boolean)) || signal || AbortSignal.timeout(config.agent.toolTimeoutMs);
       let result = await tool.execute(args, { userId, runId, signal: timeoutSignal, memory });
 
-      
+      // ── post-process: declarative plugin hooks (manifest v2) ────────────
       result = applyHooks(tool, result, { userId });
-      
+      // Vault-aware scrub at the single choke point every result passes through.
       result = scrubResult(result);
 
       let output = JSON.stringify(result, null, 1);
@@ -116,8 +121,8 @@ export function createCapabilityExecutor({ repos, approvals, audit, policy, snap
       }
       const file = filePreviewFor(tool.name, args, result);
       const durationMs = Date.now() - started;
-      
-      
+      // The captured checkpoint becomes an undo point only once the mutation
+      // actually succeeded — failed calls need no rollback entry.
       if (snapshotId && sessionId) snapshots.recordCheckpoint(sessionId, snapshotId);
       emit?.('tool/completed', { callId, tool: tool.name, displayName: tool.displayName, ok: true, durationMs, output, file, snapshotId });
       telemetry?.toolExec({ userId, sessionId, runId, tool: tool.name, ok: true, durationMs, callId });
@@ -132,8 +137,8 @@ export function createCapabilityExecutor({ repos, approvals, audit, policy, snap
     }
   }
 
-  
-  
+  // Model-supplied request headers can carry credentials the model was told;
+  // they are redacted before the args event is persisted/streamed.
   function scrubArgs(tool, args) {
     if (!args) return args;
     if (tool?.name === 'http_request' && args.headers && typeof args.headers === 'object') {
@@ -147,8 +152,8 @@ export function createCapabilityExecutor({ repos, approvals, audit, policy, snap
     return args;
   }
 
-  
-  
+  // Response headers echoed by http_request can carry upstream auth material;
+  // strip the sensitive ones from the result that flows into model context.
   function scrubResult(result) {
     if (result && typeof result === 'object' && result.headers && typeof result.headers === 'object') {
       const REDACT = /^(authorization|www-authenticate|proxy-authenticate|set-cookie|x-api-key|x-auth-token)$/i;
@@ -161,8 +166,8 @@ export function createCapabilityExecutor({ repos, approvals, audit, policy, snap
     return result;
   }
 
-  
-  
+  // Declarative hooks from plugin manifest v2: redact patterns on results of
+  // the plugin's own tools (and, for '*' hooks, any tool). Never arbitrary code.
   function applyHooks(tool, result, { userId }) {
     const hooks = Array.isArray(tool.hooks) ? tool.hooks : [];
     if (!hooks.length) return result;
@@ -176,7 +181,7 @@ export function createCapabilityExecutor({ repos, approvals, audit, policy, snap
         if (typeof out?.content === 'string') out = { ...out, content: out.content.replace(re, replace) };
         else if (typeof out?.stdout === 'string') out = { ...out, stdout: out.stdout.replace(re, replace) };
       } catch {
-        
+        /* hook failures never break execution */
       }
     }
     return out;

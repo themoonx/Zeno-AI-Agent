@@ -1,7 +1,7 @@
-
-
-
-
+// File preview panel — a VS Code-like sheet that opens from chat activity
+// whenever Zeno reads, edits, writes, or deletes a file. Shows the file with a
+// type icon, path, line numbers, and syntax highlighting. One panel, replaced
+// content; docks to the right on desktop, full-screen-ish on mobile.
 import { h, copyText, fmtBytes } from '../ui.js';
 import { icon } from '../icons.js';
 import { fileTypeFor } from '../filetypes.js';

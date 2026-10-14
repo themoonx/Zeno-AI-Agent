@@ -1,5 +1,5 @@
-
-
+// Generates browser-ESM wrappers around highlight.js CommonJS sources.
+// Run once (re-run when bumping highlight.js): node scripts/build-hljs.mjs
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
@@ -20,7 +20,7 @@ export default __module.exports;
 `;
 }
 
-
+// Core
 const coreSrc = fs.readFileSync(path.join(hljsPkgDir, 'lib', 'core.js'), 'utf8');
 fs.writeFileSync(path.join(outDir, 'core.js'), wrapEsm(coreSrc));
 

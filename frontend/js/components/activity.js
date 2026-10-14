@@ -1,14 +1,14 @@
-
-
-
+// Agent activity UI: tool-state cards (Reading → Read), the animated Thinking
+// indicator, Plan Mode cards, and inline approval gates. Used for both live
+// streaming frames and replayed history.
 import { h } from '../ui.js';
 import { icon } from '../icons.js';
 import { api } from '../api.js';
 import { fileTypeFor } from '../filetypes.js';
 import { openFilePreview } from './file-preview.js';
 
-
-
+// Per-tool verb pairs and glyphs: progressive (running) and past (done), plus
+// a human label for tools without a backend displayName.
 const TOOL_VERBS = {
   web_search: { run: 'Searching the web', done: 'Searched the web', label: 'Search', icon: 'globe' },
   browser_read: { run: 'Reading page', done: 'Read page', label: 'Read Page', icon: 'globe' },
@@ -35,8 +35,8 @@ function verbsFor(tool) {
   return TOOL_VERBS[tool] || { run: 'Calling', done: 'Called', icon: 'zap' };
 }
 
-
-
+// Derive a file reference (path + action) from a tool result attachment, so
+// replayed history gets the same preview buttons as live cards.
 function fileRefFrom(tool, att) {
   const f = att?.file;
   if (f?.path) {
@@ -68,7 +68,7 @@ function prettyOutput(output) {
   }
 }
 
-
+// Human duration for completed tool cards: 840ms / 2.4s / 1m 12s.
 function formatDuration(ms) {
   if (ms == null || Number.isNaN(ms)) return null;
   if (ms < 1000) return `${Math.round(ms)}ms`;
@@ -78,7 +78,14 @@ function formatDuration(ms) {
   return `${m}m ${s}s`;
 }
 
-
+/**
+ * One tool activity card. States:
+ *   running   — animated icon + shimmering "Reading…" label
+ *   done      — ✓, verb in past tense, duration, optional [View] file button
+ *   failed    — ✗, error styling
+ *   denied    — user refused the action
+ * `displayName` (human label from the backend) is preferred over raw IDs.
+ */
 export function activityCard({ tool, displayName, args, result, ok, denied, durationMs, file, callId, sensitive, autoApproved }, { live = false, onOpenFile } = {}) {
   const verbs = verbsFor(tool);
   const label = displayName || verbs.label || tool;
@@ -145,7 +152,7 @@ export function activityCard({ tool, displayName, args, result, ok, denied, dura
   return el;
 }
 
-
+// One-line teaser for the collapsed result row, so it never reads as empty.
 function shortOneLine(result) {
   const s = String(prettyOutput(result) || '').replace(/\s+/g, ' ');
   return s.length > 90 ? s.slice(0, 90) + '…' : s || '—';
@@ -158,7 +165,10 @@ function shortPath(p) {
   return `${parts[0]}${parts[0].endsWith(':') ? '\\' : '/'}…${s.indexOf('\\') >= 0 ? '\\' : '/'}${parts.slice(-2).join('/')}`;
 }
 
-
+/**
+ * The animated Thinking state. Shows shimmering status text while the model
+ * works; reasoning streams into the expandable body live.
+ */
 export function thinkingIndicator() {
   const label = h('span', { class: 'think-label', text: 'Thinking' });
   const body = h('div', { class: 'think-body' }, h('div', { class: 'think-stream', text: '' }));
@@ -200,7 +210,10 @@ export function rotateThinkingLabel(el) {
   return () => clearInterval(timer);
 }
 
-
+/**
+ * Plan Mode card: numbered steps with an understanding line, an approval
+ * footer in ask mode, and a live status pill while executing.
+ */
 export function planCard({ planId, understanding, steps, status = 'pending', requiresApproval = false, onDecision }) {
   const el = h('div', { class: `plan-card is-${status}`, dataset: { planId: planId || '' } });
   el.append(
@@ -252,8 +265,8 @@ export function planCard({ planId, understanding, steps, status = 'pending', req
     };
   }
 
-  
-  
+  // Live plan progress: steps 1..completed get the done treatment as the
+  // backend emits `plan/progress` (completedSteps).
   el._setProgress = (completed) => {
     const items = el.querySelectorAll('.plan-steps > li');
     items.forEach((li, i) => li.classList.toggle('done', i < completed));
@@ -263,7 +276,7 @@ export function planCard({ planId, understanding, steps, status = 'pending', req
   return el;
 }
 
-
+// Inline approval card rendered in the thread; wires the three decisions.
 export function approvalCard({ approvalId, tool, displayName, summary, payload, onDecided }, { resolved = null } = {}) {
   const el = h('div', { class: `approval-card${resolved ? ' resolved' : ''}` });
   el.append(
@@ -301,8 +314,8 @@ export function approvalCard({ approvalId, tool, displayName, summary, payload, 
   return el;
 }
 
-
-
+// Rebuild activity + approval blocks from persisted history messages
+// (role 'tool' rows with attachments, and tool_step assistant rows).
 export function activityBlocksFromHistory(messages) {
   const blocks = [];
   for (const m of messages) {
@@ -317,9 +330,9 @@ export function actingIndicator(label = 'Working…') {
   return h('div', { class: 'acting' }, h('span', { class: 'acting-dot' }), h('span', { text: label }));
 }
 
-
-
-
+// ── workspace snapshot / undo chips ─────────────────────────────────────────
+// Rendered from `snapshot/*` kernel events (live) and from replayed history
+// rows (attachments.kind === 'snapshot').
 export function snapshotCard({ action = 'captured', snapshotId, label, files, written, removed }) {
   const text =
     action === 'captured'
@@ -338,9 +351,9 @@ export function snapshotCard({ action = 'captured', snapshotId, label, files, wr
   );
 }
 
-
-
-
+// ── subagent cards ───────────────────────────────────────────────────────────
+// `subagent/assigned` renders the running card; `subagent/completed` replaces
+// it (matched by subSessionId in the chat view).
 export function subagentCard({ state = 'assigned', subSessionId, task, result }) {
   const el = h(
     'div',
@@ -364,9 +377,9 @@ export function subagentCard({ state = 'assigned', subSessionId, task, result })
   return el;
 }
 
-
-
-
+// ── verification card ────────────────────────────────────────────────────────
+// `verification/completed` — the VerificationEngine's verdict over the drafted
+// answer. Compact by default; issues expand inline. Reuses review-card styling.
 export function verificationCard({ level, ok, issues = [], confidence, checker, revised }) {
   const list = Array.isArray(issues) ? issues : [];
   const headline = revised
@@ -405,8 +418,8 @@ export function verificationCard({ level, ok, issues = [], confidence, checker, 
   return el;
 }
 
-
-
+// ── AI reviewer card ─────────────────────────────────────────────────────────
+// `review/findings` — the second-pass reviewer's verdict over the diff.
 export function reviewCard({ findings = [], verdict, diffSummary }) {
   const list = Array.isArray(findings) ? findings : [];
   const el = h(

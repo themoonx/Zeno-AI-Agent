@@ -28,7 +28,7 @@ export function createAuthService({ repos, audit }) {
 
     async login({ email, password }, ip) {
       const user = repos.users.getUserByEmail(email);
-      
+      // Constant-shape response: generic error regardless of which part failed.
       if (!user || !verifyPassword(password, user.password_hash)) {
         audit({ userId: user?.id, action: 'auth.login_failed', ip, meta: { email } });
         throw errors.unauthorized('Invalid email or password');

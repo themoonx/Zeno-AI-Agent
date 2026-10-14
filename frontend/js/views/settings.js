@@ -1,16 +1,16 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
+// Settings: a tabbed control surface for the whole workspace —
+//   General       workspace defaults + preferences
+//   Permissions   permission mode + policy rules + decision preview
+//   Tools         the harness capability catalog (tools, skills, plugins)
+//   Connections   the user's MCP servers and HTTP plugins
+//   Providers     models + custom providers/API keys
+//   Environments  execution runtime status + local agent pairing
+//   Memory        what Zeno remembers (links to the Memory view)
+//   Workspaces    project/workspace scoping
+//   Appearance    theme
+//   Security      sessions + audit log
+//   System        version, database, sandbox, shortcuts
+// Capability configuration lives here rather than on the main chat page.
 import { h, toast } from '../ui.js';
 import { icon } from '../icons.js';
 import { store } from '../state.js';
@@ -106,7 +106,7 @@ export function mountSettingsView(root, { tab = null } = {}) {
     };
   }
 
-  
+  // ── General ────────────────────────────────────────────────────────────────
   function generalPanel(host) {
     const { settings, models } = store.state;
     const defaultModelSelect = h('select', { class: 'select', onchange: save('default_model', (v) => ({ modelId: v })) },
@@ -139,7 +139,7 @@ export function mountSettingsView(root, { tab = null } = {}) {
     return { destroy() {} };
   }
 
-  
+  // ── Appearance ─────────────────────────────────────────────────────────────
   function appearancePanel(host) {
     const { settings } = store.state;
     const themeSelect = h('select', { class: 'select', onchange: (e) => { document.documentElement.dataset.theme = e.target.value; save('theme', (v) => v)(e); } },
@@ -161,7 +161,7 @@ export function mountSettingsView(root, { tab = null } = {}) {
     return { destroy() {} };
   }
 
-  
+  // ── System ─────────────────────────────────────────────────────────────────
   function systemPanel(host) {
     const host2 = h('div', { class: 'settings-panel' });
     host.append(host2);
@@ -171,13 +171,13 @@ export function mountSettingsView(root, { tab = null } = {}) {
       let telemetry = null;
       try {
         health = await api.get('/health');
-      } catch {  }
+      } catch { /* ignore */ }
       try {
         entries = (await api.get('/settings/audit?limit=30')).entries || [];
-      } catch {  }
+      } catch { /* ignore */ }
       try {
         telemetry = (await api.get('/control/telemetry?sinceHours=24')).summary;
-      } catch {  }
+      } catch { /* ignore */ }
       if (destroyed) return;
 
       const telemetryCard = telemetry

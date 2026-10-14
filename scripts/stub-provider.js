@@ -1,6 +1,6 @@
-
-
-
+// Test fixture: a minimal OpenAI-compatible server used ONLY by scripts/smoke.js
+// to verify Zeno's gateway, streaming, and agent tool-calling against a
+// deterministic backend. Not part of the product; never imported at runtime.
 import http from 'node:http';
 
 const PORT = Number(process.env.STUB_PORT || 9101);
@@ -39,16 +39,16 @@ const server = http.createServer((req, res) => {
       res.writeHead(200, { 'Content-Type': 'text/event-stream' });
       const wantsTools = Array.isArray(parsed.tools) && parsed.tools.length > 0;
       const lastUser = [...parsed.messages].reverse().find((m) => m.role === 'user')?.content || '';
-      
-      
-      
-      
+      // Round detection: Zeno always appends tool results right after the
+      // assistant tool call, so "tool result exists after the last user
+      // message" precisely identifies the feedback round. Results from
+      // earlier turns sit before the newest user message — just history.
       const lastUserIdx = parsed.messages.map((m) => m.role).lastIndexOf('user');
       const hasToolResult = parsed.messages.slice(lastUserIdx + 1).some((m) => m.role === 'tool');
       const text = String(lastUser);
 
       if (wantsTools && /USE_FILE_TOOL/i.test(text) && !hasToolResult) {
-        
+        // Round 1: request a file_write tool call. Honor a requested filename.
         const m = text.match(/write\s+([\w.-]+\.txt)/i);
         const fileName = m ? m[1] : 'hello.txt';
         sse(res, { choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: 'call_stub_1', type: 'function', function: { name: 'file_write', arguments: '' } }] } }] });
@@ -69,7 +69,7 @@ const server = http.createServer((req, res) => {
       }
 
       if (wantsTools && /USE_LOCAL_TOOL/i.test(text) && !hasToolResult) {
-        
+        // Local-computer e2e: write inside the first authorized root.
         const root = (process.env.ZENO_LOCAL_ROOTS || process.env.ZENO_LOCAL_ROOT_FALLBACK || '.').split(';')[0].replace(/\\+$/, '');
         const args = JSON.stringify({ path: root + '/daemon-e2e.txt', content: 'Written by Zeno through the local agent relay at ' + new Date().toISOString() });
         sse(res, { choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: 'call_stub_l', type: 'function', function: { name: 'local_write', arguments: '' } }] } }] });
@@ -88,11 +88,11 @@ const server = http.createServer((req, res) => {
         return;
       }
 
-      
+      // Chat / planning / final-answer behavior.
       let reply;
       const isPlanner = /planner inside Zeno/i.test(String(parsed.messages.find((m) => m.role === 'system')?.content || ''));
       if (isPlanner && /Task:/i.test(text)) {
-        
+        // Planner: emit JSON plan
         reply = '{"steps":[{"title":"Do the thing","detail":"use a tool"},{"title":"Report"}]}';
       } else if (hasToolResult) {
         reply = 'Final answer: the tool ran and I confirmed it. Task complete.';
@@ -116,8 +116,8 @@ const server = http.createServer((req, res) => {
   res.end();
 });
 
-
-
+// Deterministic pseudo-embedding: token hashing into a fixed vector — real
+// vectors so cosine similarity behaves consistently for tests.
 function embed(text) {
   const vec = new Array(64).fill(0);
   const tokens = String(text).toLowerCase().split(/\W+/).filter(Boolean);

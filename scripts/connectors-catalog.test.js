@@ -2,9 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHarness } from '../backend/harness/index.js';
 
-
-
-
+// The unified capability catalog must include the user's connector tools —
+// this is what lets the orchestrator offer a user's MCP/HTTP connector even
+// when every other capability source is off.
 test('per-turn capability catalog includes enabled user connector tools', async () => {
   const plugin = { name: 'connector_echo', description: 'Echo', sensitive: true, parameters: { type: 'object' }, execute: async () => ({ echoed: true }) };
   let catalogUser = null;

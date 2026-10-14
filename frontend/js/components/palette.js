@@ -1,4 +1,4 @@
-
+// Command palette (Ctrl+K) — navigate, act, search.
 import { h } from '../ui.js';
 import { icon } from '../icons.js';
 import { store } from '../state.js';
@@ -21,7 +21,7 @@ export function openPalette() {
     const q = input.value.trim().toLowerCase();
     filtered = commands.filter((c) => !q || c.label.toLowerCase().includes(q) || (c.keywords || '').includes(q));
     if (q) {
-      
+      // also search conversations
       const convs = store.state.conversations.filter((c) => c.title.toLowerCase().includes(q)).slice(0, 5);
       filtered = [
         ...convs.map((c) => ({

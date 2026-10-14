@@ -1,18 +1,18 @@
-
+// Job processors: agent execution + conversation memory extraction.
 import { registerProcessor } from './worker.js';
 import { logger } from '../core/logger.js';
 
 const log = logger('jobs');
 
 export function registerJobProcessors({ repos, runtime, memory, jobsRef }) {
-  
+  // agent.run — execute an agent run to completion.
   registerProcessor('agent.run', async (payload) => {
     await runtime.executeRun(payload.runId);
     return { ok: true, runId: payload.runId };
   });
 
-  
-  
+  // memory.extract — distill durable facts from a finished conversation, then
+  // run a consolidation pass (merge/strengthen/expire) to keep the store clean.
   registerProcessor('memory.extract', async (payload, { userId }) => {
     if (!payload.modelRowId) {
       const model = repos.users.getSetting(userId, 'default_model');
@@ -28,7 +28,7 @@ export function registerJobProcessors({ repos, runtime, memory, jobsRef }) {
     try {
       consolidation = await memory.consolidate(userId);
     } catch (err) {
-      
+      // never fail the extraction job because cleanup hiccuped
     }
     return { ...result, consolidation };
   });

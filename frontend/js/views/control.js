@@ -1,6 +1,6 @@
-
-
-
+// Settings control-center panels: Permissions, Environments, Workspaces,
+// Security. Each follows the settings-panel contract (append into host,
+// return {destroy}).
 import { h, toast, confirmDialog, openModal, timeAgo } from '../ui.js';
 import { icon } from '../icons.js';
 import { store } from '../state.js';
@@ -13,7 +13,7 @@ function settingsRow(title, desc, control) {
   );
 }
 
-
+// ── Permissions: mode + rules + effective-decision preview ───────────────────
 export function permissionsPanel(host) {
   let destroyed = false;
 
@@ -32,7 +32,7 @@ export function permissionsPanel(host) {
   function render(data) {
     host.innerHTML = '';
 
-    
+    // Mode selector — mirrors the composer chip but with full descriptions.
     const modeCards = h('div', { class: 'perm-mode-grid' },
       data.modes.map((m) =>
         h('button', {
@@ -53,7 +53,7 @@ export function permissionsPanel(host) {
       )
     );
 
-    
+    // Rules CRUD.
     const ruleSubject = h('input', { class: 'input mono', placeholder: 'fs.write:C:/Users/you/Projects/**' });
     const ruleEffect = h('select', { class: 'select', style: 'width:110px' },
       h('option', { value: 'allow', text: 'Allow' }),
@@ -87,7 +87,7 @@ export function permissionsPanel(host) {
     }
     renderRules(data.rules);
 
-    
+    // Decision preview.
     const previewTool = h('select', { class: 'select', style: 'width:200px' },
       ...['terminal', 'code_exec', 'http_request', 'file_write', 'file_delete', 'local_write', 'web_search'].map((t) => h('option', { value: t, text: t })));
     const previewPath = h('input', { class: 'input mono', placeholder: 'C:/Users/you/Desktop/test.py (optional)', style: 'flex:1' });
@@ -144,7 +144,7 @@ export function permissionsPanel(host) {
   return { destroy() { destroyed = true; } };
 }
 
-
+// ── Environments: execution runtime status + local agent pairing ────────────
 export function environmentsPanel(host) {
   let destroyed = false;
 
@@ -234,7 +234,7 @@ export function environmentsPanel(host) {
   return { destroy() { destroyed = true; } };
 }
 
-
+// ── Security: sessions + audit log ───────────────────────────────────────────
 export function securityPanel(host) {
   let destroyed = false;
 
@@ -286,7 +286,7 @@ export function securityPanel(host) {
   return { destroy() { destroyed = true; } };
 }
 
-
+// ── Workspaces: project scoping overview ─────────────────────────────────────
 export function workspacesPanel(host) {
   const projects = store.state.projects;
   host.append(

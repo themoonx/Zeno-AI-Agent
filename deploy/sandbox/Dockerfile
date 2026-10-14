@@ -16,7 +16,7 @@ FROM node:24-alpine
 RUN apk add --no-cache docker-cli python3 py3-pip make g++ coreutils findutils grep sed tar gzip curl git
 
 WORKDIR /runner
-COPY runner.mjs package.json ./
+COPY runner.mjs package.json* ./
 RUN npm init -y >/dev/null
 
 ENV NODE_ENV=production

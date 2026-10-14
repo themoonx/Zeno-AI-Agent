@@ -1,14 +1,14 @@
-
-
-
-
-
-
-
-
-
-
-
+// Local computer bridge tools — authorized filesystem access OUTSIDE the
+// per-user workspace. The transport is the ExecutionWorld seam's local-agent
+// provider (backend/execution/world.js): a paired local-agent daemon on the
+// user's machine when one is connected (the web-deployment path), otherwise
+// the server-side bridge when ZENO_LOCAL_ROOTS is configured (the local-run
+// path).
+//
+// Every tool is `sensitive` and NOT workspace-safe, so under Ask Before Change
+// and Workspace Edit modes each call waits for human approval — only Full
+// Access runs them silently. Paths stay confined to the authorized roots on
+// whichever side executes them.
 import { getWorldRegistry } from '../execution/world.js';
 import { localRoots } from '../execution/local-fs.js';
 import { logger } from '../core/logger.js';
@@ -18,7 +18,7 @@ const READ_DEFAULT_CHARS = 24_000;
 
 const worlds = getWorldRegistry();
 
-
+/** Is local access reachable for this user (paired daemon online, or server-side bridge)? */
 export function localFsAvailable(userId) {
   return !!worlds.tryResolve('local-agent', { userId });
 }

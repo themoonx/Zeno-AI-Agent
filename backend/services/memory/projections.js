@@ -1,7 +1,7 @@
-
-
-
-
+// Typed memory projections — structured state (goals, tasks, decisions)
+// derived from session events and upserted into the memory store alongside
+// prose memory. Event-derived: the kernel log is read once at session end;
+// nothing is stored as an opaque blob, and retrieval stays contextual.
 import { logger } from '../../core/logger.js';
 
 const log = logger('memory-projections');
@@ -34,7 +34,11 @@ export function projectStructuredMemory(events) {
   return { goals, tasks, decisions };
 }
 
-
+/**
+ * Wire into session end: called by the host after a session closes.
+ * Uses remember() for each entry — the selective pipeline deduplicates and
+ * drops low-importance entries automatically.
+ */
 export async function projectSessionMemory({ memory, repos, userId, sessionId, conversationId = null, projectId = null }) {
   try {
     const events = repos.sessions.listEvents(sessionId);

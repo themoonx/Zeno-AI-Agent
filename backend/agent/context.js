@@ -1,23 +1,23 @@
-
-
-
-
-
-
-
-
-
-
-
+// Context Engine — assembles every model prompt from prioritized sections and
+// manages history compaction. Replaces the single hard-coded system prompt.
+//
+// Sections carry priorities; when the combined prompt exceeds the budget the
+// lowest-priority detail is dropped first (memory detail → capability detail →
+// environment detail), so identity, permissions, and the plan always survive.
+//
+// History compaction: when the transcript outgrows the budget, older messages
+// are model-summarized once and cached on the conversation (summary +
+// summary_upto_seq); the summary stands in for those messages until the
+// conversation is edited or regenerated past it.
 import { config } from '../core/config.js';
 import { MODE_LABELS, MODE_DESCRIPTIONS } from '../policy/presets.js';
 
-const CHAR_PER_TOKEN = 3.6; 
+const CHAR_PER_TOKEN = 3.6; // conservative average for mixed code/prose
 
 export function budgetCharsFor(modelRow) {
   const window = modelRow?.contextWindow;
   if (!window || window < 4000) return config.agent.contextCharBudget ?? 96_000;
-  
+  // Reserve room for output + tool results inside the same budget.
   return Math.max(24_000, Math.min(window * CHAR_PER_TOKEN * 0.6, 400_000));
 }
 
@@ -29,7 +29,7 @@ export function estimateChars(messages) {
   return n;
 }
 
-
+// ── section builders ─────────────────────────────────────────────────────────
 
 function identitySection(role, permissionMode, conv, { agentName = null, systemPrompt = null } = {}) {
   const effectivePrompt = systemPrompt || conv?.systemPrompt || null;
@@ -79,8 +79,8 @@ function memorySection(memoryBlock) {
 
 function skillsSection({ matchedSkills, allSkills, toolNames }) {
   const parts = [];
-  
-  
+  // Progressive loading: at most the strongest match is inlined; everything
+  // else is a roster the model can pull in via the skill_load tool.
   const inline = matchedSkills.filter((s) => s.score >= 3).slice(0, 1);
   for (const s of inline) {
     parts.push(`Active skill for this request — follow it carefully:\n\n### Skill: ${s.name}\n${s.instructions}`);
@@ -108,8 +108,12 @@ function guidanceSection(guidance) {
   return { priority: 40, text: `Plugin guidance:\n${guidance}` };
 }
 
+// ── assembly ─────────────────────────────────────────────────────────────────
 
-
+/**
+ * The default contributor set — registered into the prompt registry at boot
+ * (agent/prompt.js). Kept here so the sections stay testable in isolation.
+ */
 export function registerDefaultPromptContributors(registry) {
   registry.register({
     id: 'identity',
@@ -168,6 +172,9 @@ export function registerDefaultPromptContributors(registry) {
   });
 }
 
+/**
+ * Direct assembly (the registry path wraps this — kept for unit tests).
+ */
 export function assembleSystemPrompt(opts) {
   const budget = opts.budget ?? budgetCharsFor(opts.modelRow);
   const sections = [
@@ -181,7 +188,7 @@ export function assembleSystemPrompt(opts) {
     environmentSection({ sandboxMode: opts.sandboxMode, localAvailable: opts.localAvailable }),
   ].filter(Boolean);
 
-  
+  // Working rules always included (identity-level priority).
   const rules = {
     priority: 100,
     text: [
@@ -197,20 +204,20 @@ export function assembleSystemPrompt(opts) {
   };
   sections.push(rules);
 
-  
+  // Highest priority first; stop when the budget is exhausted.
   sections.sort((a, b) => b.priority - a.priority);
   let total = 0;
   const kept = [];
   for (const s of sections) {
-    if (s.priority < 80 && total + s.text.length > budget) continue; 
+    if (s.priority < 80 && total + s.text.length > budget) continue; // low-priority detail is droppable
     kept.push(s.text);
     total += s.text.length;
   }
   return kept.join('\n\n');
 }
 
-
-
-
-
-
+// History compaction does NOT live here. It is performed by the orchestrator
+// as a durable `context/compacted` event in the session log (agent/orchestrator
+// .js), so the reconstruction invariant can verify replayed transcripts stay
+// byte-identical to what the model saw. A prompt-level trimmer like this one
+// would silently diverge from the log.

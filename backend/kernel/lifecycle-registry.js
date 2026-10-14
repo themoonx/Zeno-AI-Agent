@@ -1,11 +1,11 @@
-
-
-
-
-
+// Session-scoped disposal registries. Every session gets one; anything it
+// creates that outlives a single function call (streams, subagent sessions,
+// relays, timers) registers teardown here BEFORE being published. Stop uses
+// this to unwind deterministically; normal turn ends dispose turn-scoped
+// scopes on their own.
 import { createDisposalRegistry } from './lifecycle.js';
 
-const registries = new Map(); 
+const registries = new Map(); // sessionId -> DisposalRegistry
 
 export function getDisposals(sessionId) {
   if (!sessionId) return null;

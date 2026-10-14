@@ -58,12 +58,12 @@ export function createMemoryRepo(db) {
       const r = db.get('SELECT * FROM memories WHERE user_id = ? AND id = ?', [userId, id]);
       return r ? rowToMemory(r) : null;
     },
-    
+    // Raw row (parsed embedding) for similarity search.
     getRawById(id) {
       const r = db.get('SELECT * FROM memories WHERE id = ?', [id]);
       return r ? { ...rowToMemory(r), embedding: pj(r.embedding, null) } : null;
     },
-    
+    // All ACTIVE memories with their embeddings — the retrieval candidate set.
     listForSearch(userId, { projectId = null, agentId = null } = {}) {
       const conds = ["user_id = ?", "(status = 'active' OR status IS NULL)", 'superseded_by IS NULL'];
       const params = [userId];
@@ -87,7 +87,7 @@ export function createMemoryRepo(db) {
     updateContent(userId, id, content) {
       db.run('UPDATE memories SET content = ?, updated_at = ? WHERE user_id = ? AND id = ?', [content, now(), userId, id]);
     },
-    
+    // Refresh the embedding + derived fields in one write (service-level use).
     updateFields(userId, id, fields) {
       const map = { content: 'content', importance: 'importance', confidence: 'confidence', expiresAt: 'expires_at', status: 'status', tags: 'tags', subject: 'subject', supersededBy: 'superseded_by', embedding: 'embedding', embeddingModel: 'embedding_model' };
       const sets = ['updated_at = ?'];
@@ -103,8 +103,8 @@ export function createMemoryRepo(db) {
       params.push(userId, id);
       db.run(`UPDATE memories SET ${sets.join(', ')} WHERE user_id = ? AND id = ?`, params);
     },
-    
-    
+    // Reinforcement: retrieval and re-use strengthen a memory (spaced-repetition
+    // style access counters — used by recency scoring and consolidation).
     reinforce(id) {
       db.run('UPDATE memories SET access_count = access_count + 1, last_accessed_at = ?, updated_at = ? WHERE id = ?', [now(), now(), id]);
     },

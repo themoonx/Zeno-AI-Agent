@@ -1,13 +1,13 @@
-
-
-
-
+// Realtime agent registry — tracks paired local-agent daemons that are
+// currently connected, per user, and relays capability operations to them.
+// In-process by design (same contract as the eventbus: a Redis-backed adapter
+// can slot in later for multi-node deployments).
 import { logger } from '../core/logger.js';
 
 const log = logger('realtime');
 
 export function createAgentRegistry() {
-  
+  // Map<userId, Map<agentId, { socket, agent, connectedAt }>>
   const online = new Map();
 
   function register(userId, agentId, socket, agent) {
@@ -33,7 +33,12 @@ export function createAgentRegistry() {
     return [...(online.get(userId)?.keys() || [])];
   }
 
-  
+  /**
+   * Relay one operation to a user's local agent. Resolves the agent's result.
+   * ops: fs.read {path} · fs.list {path, recursive} · fs.write {path, content}
+   *      fs.edit {path, find, replace, replace_all} · fs.delete {path}
+   *      shell.exec {command} · code.exec {language, code}
+   */
   function relay(userId, op, params = {}, { agentId = null, timeoutMs = 30_000 } = {}) {
     const set = online.get(userId);
     const entry = agentId ? set?.get(agentId) : set?.values().next().value;

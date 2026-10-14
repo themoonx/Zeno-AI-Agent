@@ -1,10 +1,10 @@
-
-
-
-
-
-
-
+// Built-in plugin packs. Each pack is a capability bundle: tools (real,
+// in-process implementations), skills, and guidance the harness injects.
+//
+// This is the "everything is a plugin" surface in practice — the web, research,
+// memory, and execution capabilities the agent relies on are described here as
+// self-contained packs rather than hard-wired special cases. A new pack is a
+// new file in this list; nothing in the engine changes.
 import { webSearchTool } from '../tools/web-search.js';
 import { browserReadTool } from '../tools/browser-read.js';
 import { httpRequestTool } from '../tools/http-request.js';
@@ -22,7 +22,7 @@ function skillsBySlug(slugs) {
 
 let cache = null;
 
-
+/** The built-in capability packs. Cached after first build. */
 export function builtinPlugins() {
   if (cache) return cache;
   cache = [

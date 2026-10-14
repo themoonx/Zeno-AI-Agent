@@ -31,7 +31,7 @@ export function extractToken(req) {
 }
 
 export function createAuthMiddleware(auth) {
-  
+  // requireAuth: hard gate. attachUser: soft attach (allows anonymous health).
   const attach = (req, _res, next) => {
     try {
       req.auth = auth.verifySession(extractToken(req));

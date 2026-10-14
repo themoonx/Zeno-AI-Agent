@@ -1,7 +1,7 @@
-
-
-
-
+// The Gateway is the ONLY place the rest of the app talks to AI providers.
+// It resolves a model → its provider row → the matching adapter, decrypts the
+// credential, normalizes errors, and enforces timeouts. Adapters never see
+// user IDs or database state; the app never sees provider credentials.
 import { decryptSecret } from '../core/crypto.js';
 import { errors } from '../core/errors.js';
 import { logger } from '../core/logger.js';
@@ -28,14 +28,14 @@ export function createGateway({ repos }) {
     return adapter;
   }
 
-  
+  // Resolve a user's model (by models.id) into a gateway context.
   function resolveModel(userId, modelRowId) {
     const model = repos.providers.getModel(userId, modelRowId);
     if (!model) throw errors.notFound('Model');
     const provider = repos.providers.getProvider(userId, model.providerId);
     if (!provider) throw errors.notFound('Provider for model');
-    
-    
+    // Sanitized rows hide credentials; fetch the raw row only after the
+    // ownership check above has passed.
     const raw = repos.providers.getProviderRaw(provider.id);
     const apiKey = raw?.credentials ? decryptSecret(raw.credentials) : null;
     return {
@@ -56,8 +56,8 @@ export function createGateway({ repos }) {
 
     resolveModel,
 
-    
-    
+    // Stream a chat completion. Emits deltas through callbacks; resolves with
+    // { finishReason, usage }.
     async chatStream({ userId, modelRowId, messages, tools = null, signal, onDelta, onToolCall, onUsage, timeoutMs = 300_000 }) {
       const { model, provider, ctx } = resolveModel(userId, modelRowId);
       const adapter = adapterFor(provider.kind);
@@ -83,9 +83,9 @@ export function createGateway({ repos }) {
       }
     },
 
-    
-    
-    
+    // Non-streaming single completion (used by the agent planner/memory jobs).
+    // onUsage lets callers account tokens for auxiliary calls (planning,
+    // compaction, verification) exactly like streamed turns.
     async complete({ userId, modelRowId, messages, tools = null, timeoutMs = 120_000, onUsage = null }) {
       const { model, provider, ctx } = resolveModel(userId, modelRowId);
       const adapter = adapterFor(provider.kind);
@@ -128,7 +128,7 @@ export function createGateway({ repos }) {
       return adapter.listModels({ baseUrl: provider.baseUrl, apiKey, headers: provider.extraHeaders || {}, signal });
     },
 
-    
+    // Verify a provider configuration end-to-end without persisting anything.
     async testConnection({ kind, baseUrl, apiKey, extraHeaders, timeoutMs = 15_000 }) {
       const adapter = adapterFor(kind);
       const signal = AbortSignal.timeout(timeoutMs);
@@ -138,8 +138,8 @@ export function createGateway({ repos }) {
   };
 }
 
-
-
+// Guard against SSRF when users add custom provider base URLs: allow private
+// addresses (Ollama/LM Studio are local) but never non-HTTP schemes.
 export function assertValidBaseUrl(url) {
   let parsed;
   try {

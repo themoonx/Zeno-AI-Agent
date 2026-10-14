@@ -11,6 +11,7 @@
     "start": "node backend/server.js",
     "dev": "node backend/server.js",
     "test": "node scripts/smoke.js",
+    "test:unit": "node scripts/connectors.test.js && node scripts/connectors-catalog.test.js && node scripts/features.test.js && node scripts/intelligence.test.js && node scripts/websearch.test.js",
     "test:connectors": "node scripts/connectors.test.js && node scripts/connectors-catalog.test.js",
     "test:e2e": "node scripts/connectors-smoke.js",
     "test:features": "node scripts/features.test.js",

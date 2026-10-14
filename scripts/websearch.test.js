@@ -1,6 +1,6 @@
-
-
-
+// Unit tests for the web_search DuckDuckGo parser (no network): canned HTML
+// for the three layouts the tool understands, adversarial attribute orders,
+// ads, wrapped URLs, and snippet alignment. Run: node scripts/websearch.test.js
 import { parseDdgHtml } from '../backend/tools/web-search.js';
 
 let passed = 0;
@@ -15,7 +15,7 @@ function ok(name, cond, extra = '') {
   }
 }
 
-
+// 1. Classic html.duckduckgo.com layout (href BEFORE class — the old parser's blind spot).
 const htmlClassic = `
 <div class="results">
   <div class="result">
@@ -32,7 +32,7 @@ const htmlClassic = `
   </div>
 </div>`;
 
-
+// 2. lite.duckduckgo.com table layout.
 const htmlLite = `
 <table>
   <tr><td><a rel="nofollow" href="https://example.org/guide" class="result-link">A guide</a></td></tr>
@@ -41,7 +41,7 @@ const htmlLite = `
   <tr><td class="result-snippet">Second snippet.</td></tr>
 </table>`;
 
-
+// 3. Bot-check interstitial.
 const htmlCaptcha = `<html><body><p>Unfortunately, bots use DuckDuckGo too — anomaly detected.</p></body></html>`;
 
 const r1 = parseDdgHtml(htmlClassic, 10);

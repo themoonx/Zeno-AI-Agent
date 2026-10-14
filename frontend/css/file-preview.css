@@ -1,4 +1,6 @@
-
+/* ── File preview: a VS Code-style sheet over the app ───────────────────────
+   The panel inherits the --syn-* scope (see code.css): a dark editor in the
+   dark theme, a light editor in the light theme. */
 
 .fp-scrim {
   position: fixed; inset: 0; z-index: 80;
@@ -38,7 +40,7 @@
   }
 }
 
-
+/* Title bar — traffic dots + filename + action badge */
 .fp-titlebar {
   display: flex; align-items: center; gap: 10px;
   padding: 11px 13px;
@@ -72,7 +74,7 @@
 .fp-actions { display: inline-flex; align-items: center; gap: 4px; flex: none; }
 .fp-size { font-size: var(--fs-xs); color: var(--text-3); margin-right: 4px; font-family: var(--mono); }
 
-
+/* Path bar — scope chip + full path */
 .fp-pathbar {
   display: flex; align-items: center; gap: 8px;
   padding: 7px 15px;
@@ -90,11 +92,11 @@
 .fp-path {
   font-size: 11.5px; color: var(--text-3); font-family: var(--mono);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  direction: rtl; text-align: left; 
+  direction: rtl; text-align: left; /* keep the tail (filename) visible */
 }
 .fp-meta { flex: none; font-size: var(--fs-xs); color: var(--accent); font-weight: 650; }
 
-
+/* Code body — gutter + highlighted lines */
 .fp-body { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 .fp-code {
   flex: 1; min-height: 0;

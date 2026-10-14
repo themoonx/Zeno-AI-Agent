@@ -41,7 +41,7 @@ function rowToMessage(r) {
 
 export function createChatRepo(db) {
   return {
-    
+    // ── conversations ──────────────────────────────────────────────────────
     createConversation({ id, userId, projectId, title, systemPrompt, providerId, modelId, modelLabel, params }) {
       const t = now();
       db.run(
@@ -92,12 +92,12 @@ export function createChatRepo(db) {
     countConversations(userId) {
       return db.get('SELECT COUNT(*) AS c FROM conversations WHERE user_id = ?', [userId]).c;
     },
-    
+    // Kernel importer: all conversations (id + owner) regardless of user.
     listAllConversationHeaders() {
       return db.all('SELECT id, user_id FROM conversations ORDER BY created_at ASC');
     },
 
-    
+    // ── messages ───────────────────────────────────────────────────────────
     nextSeq(conversationId) {
       const row = db.get('SELECT COALESCE(MAX(seq), 0) AS m FROM messages WHERE conversation_id = ?', [conversationId]);
       return Number(row.m) + 1;
@@ -138,7 +138,7 @@ export function createChatRepo(db) {
     deleteMessage(userId, id) {
       db.run('DELETE FROM messages WHERE user_id = ? AND id = ?', [userId, id]);
     },
-    
+    // Everything after (and including) a message seq — used for regenerate/edit.
     deleteMessagesFrom(conversationId, seq) {
       db.run('DELETE FROM messages WHERE conversation_id = ? AND seq >= ?', [conversationId, seq]);
     },

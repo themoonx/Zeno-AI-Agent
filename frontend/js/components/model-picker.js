@@ -1,5 +1,5 @@
-
-
+// Model picker: dropdown grouped by provider, shows context window +
+// capabilities; updates the conversation's model (or session default).
 import { h, openDropdown, closeMenu, fmtTokens, toast } from '../ui.js';
 import { icon } from '../icons.js';
 import { store, currentModel, defaultModel } from '../state.js';
@@ -89,7 +89,7 @@ function capClass(cap) {
   return { tools: 'blue', vision: 'violet', reasoning: 'amber', embeddings: '' }[cap] || '';
 }
 
-
+// Persist a model choice: conversation-scoped when inside a conversation.
 export async function setConversationModel(conv, model) {
   store.update({ currentModelId: model.id });
   if (conv) {
@@ -98,7 +98,7 @@ export async function setConversationModel(conv, model) {
       modelLabel: model.displayName,
       providerId: model.providerId,
     });
-    
+    // Patch the local slice instead of refetching every conversation.
     store.update({
       conversations: store.state.conversations.map((c) =>
         c.id === conv.id ? { ...c, modelId: model.id, modelLabel: model.displayName, providerId: model.providerId } : c

@@ -1,6 +1,6 @@
-
-
-
+// Scheduler — cron-triggered agent runs using the SAME kernel and runtime as
+// interactive chat. Trigger → lease/claim → run → events/history, with
+// duplicate-run protection and concurrency caps.
 import { randomId } from '../core/crypto.js';
 import { j, pj, now } from '../database/helpers.js';
 import { nextRun } from './cron.js';
@@ -63,7 +63,7 @@ export function createSchedulesRepo(db) {
     delete(userId, id) {
       db.run('DELETE FROM schedules WHERE user_id = ? AND id = ?', [userId, id]);
     },
-    
+    /** Atomic due-claim: compare-and-set on next_run_at so two workers can never double-claim. */
     claimDue(scheduleId, scheduledFor, workerId) {
       const claimed = db.run(
         'UPDATE schedules SET last_run_at = ?, last_status = ?, updated_at = ? WHERE id = ? AND next_run_at = ? AND enabled = 1',
@@ -84,7 +84,7 @@ export function createSchedulesRepo(db) {
     countActive(scheduleId) {
       return Number(db.get("SELECT COUNT(*) AS c FROM schedule_runs WHERE schedule_id = ? AND status IN ('queued','running')", [scheduleId]).c);
     },
-    
+    /** Due enabled schedules (next_run_at <= now). */
     due() {
       return db.all('SELECT * FROM schedules WHERE enabled = 1 AND next_run_at IS NOT NULL AND next_run_at <= ? ORDER BY next_run_at ASC', [now()]).map(rowToSchedule);
     },
@@ -124,17 +124,17 @@ export function createScheduler({ repos, kernel, runsService, telemetry, audit }
     try {
       const due = repos.schedules.due();
       for (const schedule of due) {
-        
+        // Concurrency cap.
         if (repos.schedules.countActive(schedule.id) >= (schedule.maxConcurrent || 1)) {
           repos.schedules.update(schedule.userId, schedule.id, { nextRunAt: computeNext(schedule.cron), lastStatus: 'skipped-concurrency' });
           continue;
         }
-        
+        // Duplicate protection + lease: the claim is the compare-and-set.
         const scheduledFor = schedule.nextRunAt;
         if (!repos.schedules.claimDue(schedule.id, scheduledFor, workerId)) continue;
         repos.schedules.update(schedule.userId, schedule.id, { nextRunAt: computeNext(schedule.cron) });
 
-        
+        // Durable record for this occurrence (unique per schedule+time).
         const occurrenceId = `scr_${randomId('occ').replace(/^occ_/, '')}`;
         try {
           repos.schedules.insertRun({ id: occurrenceId, scheduleId: schedule.id, userId: schedule.userId, scheduledFor });
@@ -143,8 +143,8 @@ export function createScheduler({ repos, kernel, runsService, telemetry, audit }
           continue;
         }
 
-        
-        
+        // Start the run through the SAME runtime as chat (runsService enqueues
+        // the durable job; the worker owns execution and retries).
         try {
           const run = await runsService.startRun({ userId: schedule.userId, agent: { name: `Schedule: ${schedule.name}`, projectId: schedule.projectId }, task: schedule.task });
           repos.schedules.updateRun(occurrenceId, { runId: run.id, status: 'running' });

@@ -1,6 +1,6 @@
-
-
-
+// Connections panel: the user-owned MCP servers and HTTP plugins the agent can
+// call. Rendered inside Settings → Connections (it used to be a top-level page;
+// capability configuration now lives in Settings).
 import { h, toast, confirmDialog, openModal, timeAgo } from '../ui.js';
 import { icon } from '../icons.js';
 import { api } from '../api.js';
@@ -18,7 +18,10 @@ const SAMPLE_SCHEMA = `{
   "required": ["query"]
 }`;
 
-
+/**
+ * Connections section. `onChange` is called after any mutation so the parent
+ * can refresh aggregate counts.
+ */
 export function connectionsSection({ onChange = null } = {}) {
   const root = h('div', { class: 'settings-panel-body' });
   let connectors = [];

@@ -68,7 +68,7 @@ export function createRunRoutes({ repos, runs, toolSchemas, sandboxMode, policy,
     try {
       const run = repos.runs.getRun(req.auth.userId, req.params.id);
       if (!run) throw errors.notFound('Run');
-      
+      // Events come from the session kernel log (source of truth).
       const session = repos.sessions.activeForRun(run.id) || repos.sessions.activeForConversation(run.conversationId);
       const events = session
         ? repos.sessions.listEvents(session.id).map((ev) => ({ seq: ev.seq, runId: run.id, ts: ev.ts, type: ev.type, data: ev.data }))
@@ -80,15 +80,15 @@ export function createRunRoutes({ repos, runs, toolSchemas, sandboxMode, policy,
     }
   });
 
-  
+  // Live event stream for a run (SSE). Replays from ?after=seq on reconnect.
   router.get('/:id/events', (req, res, next) => {
     try {
       const run = repos.runs.getRun(req.auth.userId, req.params.id);
       if (!run) throw errors.notFound('Run');
       const afterSeq = Number(req.query.after) || 0;
 
-      
-      
+      // Events live in the session kernel log (session_events) — the run row
+      // is the task anchor, the log is the source of truth.
       const session = repos.sessions.activeForRun(run.id) || repos.sessions.activeForConversation(run.conversationId);
       sseHead(res);
 
@@ -113,7 +113,7 @@ export function createRunRoutes({ repos, runs, toolSchemas, sandboxMode, policy,
         if (!closed) res.write(`:hb ${Date.now()}\n\n`);
       }, 15_000);
 
-      
+      // Close the stream shortly after the run reaches a terminal state.
       const finishCheck = setInterval(() => {
         const current = repos.runs.getRun(req.auth.userId, run.id);
         if (current && ['completed', 'failed', 'cancelled'].includes(current.status)) {
@@ -124,8 +124,8 @@ export function createRunRoutes({ repos, runs, toolSchemas, sandboxMode, policy,
         }
       }, 3000);
 
-      
-      
+      // res 'close' = client disconnect or stream end (req 'close' fires as
+      // soon as the body-less GET is "received", which would kill the SSE).
       res.on('close', () => {
         closed = true;
         unsubscribe();
@@ -148,7 +148,7 @@ export function createRunRoutes({ repos, runs, toolSchemas, sandboxMode, policy,
     }
   });
 
-  
+  // Approve or deny a pending approval.
   router.post('/approvals/:approvalId', (req, res, next) => {
     try {
       const body = validate(req.body, {
@@ -163,8 +163,8 @@ export function createRunRoutes({ repos, runs, toolSchemas, sandboxMode, policy,
         repos.runs.grantStanding(req.auth.userId, approval.runId, approval.tool);
       }
       if (body.decision === 'approved' && body.scope === 'always' && policy) {
-        
-        
+        // Persistent approval: compile into an allow rule for this capability's
+        // action class + resource (scoped, inspectable, revocable in Settings).
         const actionClass = policy.actionClassOf({ name: approval.tool });
         const resource = approval.payload?.path || '*';
         repos.policy.insert({
@@ -176,7 +176,7 @@ export function createRunRoutes({ repos, runs, toolSchemas, sandboxMode, policy,
         publish(topics.userEvents(req.auth.userId), { type: 'policy.changed', userId: req.auth.userId });
         policyReevaluator?.reevaluatePending(req.auth.userId);
       }
-      
+      // Wake the waiting runtime immediately (same-process fast path).
       publish(topics.userEvents(req.auth.userId), { type: 'approval_decided', approvalId: approval.id });
       res.json({ ok: true, decision: body.decision });
     } catch (err) {

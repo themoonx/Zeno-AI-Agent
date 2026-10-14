@@ -1,5 +1,5 @@
-
-
+// PostgreSQL driver (pg). Translates `?` placeholders to $n positional ones.
+// JSONB columns accept JSON strings directly.
 import pg from 'pg';
 import { logger } from '../core/logger.js';
 
@@ -22,7 +22,7 @@ export class PostgresDriver {
   }
 
   exec(sql) {
-    
+    // Split on semicolons at top level (schema files contain no functions).
     return this.pool.query(sql);
   }
 

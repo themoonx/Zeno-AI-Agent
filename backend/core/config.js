@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const ROOT_DIR = path.resolve(__dirname, '..', '..');
 
-
+// Minimal .env loader (no dependency): only sets vars not already present.
 (function loadDotEnv() {
   const envPath = path.join(ROOT_DIR, '.env');
   if (!fs.existsSync(envPath)) return;
@@ -30,7 +30,7 @@ export const config = {
 
   // Secret for key encryption + token signing. In development we derive a
   // stable fallback so restarts don't invalidate stored keys; production must
-  
+  // set ZENO_SECRET.
   secret:
     process.env.ZENO_SECRET ||
     crypto.createHash('sha256').update(`zeno-dev-secret::${ROOT_DIR}`).digest('base64url'),
@@ -49,9 +49,9 @@ export const config = {
 
   sandboxUrl: process.env.ZENO_SANDBOX_URL || null,
 
-  
-  
-  
+  // Local computer bridge: authorized filesystem access outside the per-user
+  // workspace, on the machine running the server. Off unless explicitly
+  // enabled; roots are the only locations the agent may touch.
   localBridge: {
     enabled: process.env.ZENO_LOCAL_BRIDGE === '1' || !!process.env.ZENO_LOCAL_ROOTS,
     roots: (process.env.ZENO_LOCAL_ROOTS || '')
@@ -90,23 +90,23 @@ export const config = {
     contextCharBudget: intEnv('ZENO_CONTEXT_CHAR_BUDGET', 96_000),
   },
 
-  
-  
-  
+  // Intelligence layer (Jev decision engine + routing + verification). These
+  // are engine-level bounds; user-visible behavior is configured per user in
+  // Settings → Intelligence (jev / model_routing / verification / research).
   intelligence: {
-    
-    
-    
+    // Decision rounds must be far cheaper than the work they route: a remote
+    // Jev call that has not returned within this bound falls back to the
+    // in-process heuristic classifier (spec §43 graceful degradation).
     remoteDecisionTimeoutMs: intEnv('ZENO_DECISION_TIMEOUT_MS', 2500),
-    
+    // Retry budget for TRANSIENT/RATE_LIMIT/NETWORK model failures (spec §22).
     modelRetryAttempts: intEnv('ZENO_MODEL_RETRY_ATTEMPTS', 2),
     modelRetryBaseDelayMs: intEnv('ZENO_MODEL_RETRY_BASE_MS', 500),
     modelRetryMaxDelayMs: intEnv('ZENO_MODEL_RETRY_MAX_MS', 8000),
-    
-    
+    // Research workflow bounds (spec §20): parallel sub-queries and follow-up
+    // page reads per research turn.
     researchMaxSubqueries: intEnv('ZENO_RESEARCH_MAX_SUBQUERIES', 4),
     researchMaxReads: intEnv('ZENO_RESEARCH_MAX_READS', 3),
-    
+    // Upper bound on tools dispatched concurrently in one round (spec §19).
     maxParallelTools: intEnv('ZENO_MAX_PARALLEL_TOOLS', 6),
   },
 

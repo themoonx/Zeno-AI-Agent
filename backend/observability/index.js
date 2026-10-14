@@ -1,6 +1,6 @@
-
-
-
+// Observability — event-aware structured telemetry, correlated by the
+// session/run/turn/step/call ids that already flow through kernel events.
+// Records are scrubbed: no secrets, no reasoning text, no model output bodies.
 import { randomId } from '../core/crypto.js';
 import { logger } from '../core/logger.js';
 

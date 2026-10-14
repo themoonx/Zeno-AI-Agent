@@ -47,7 +47,7 @@ export function createProvidersRepo(db) {
     getProvider(userId, id) {
       return rowToProvider(db.get('SELECT * FROM providers WHERE user_id = ? AND id = ?', [userId, id]));
     },
-    
+    // Internal (no userId) — used by the gateway after ownership check upstream.
     getProviderRaw(id) {
       return db.get('SELECT * FROM providers WHERE id = ?', [id]);
     },
@@ -78,7 +78,7 @@ export function createProvidersRepo(db) {
       return db.get('SELECT COUNT(*) AS c FROM providers WHERE user_id = ?', [userId]).c;
     },
 
-    
+    // ── models ─────────────────────────────────────────────────────────────
     createModel({ id, userId, providerId, modelId, displayName, contextWindow, maxOutputTokens, capabilities, params }) {
       db.run(
         `INSERT INTO models (id, user_id, provider_id, model_id, display_name, context_window, max_output_tokens, capabilities, params, created_at)
@@ -97,7 +97,7 @@ export function createProvidersRepo(db) {
     getModel(userId, id) {
       return rowToModel(db.get('SELECT * FROM models WHERE user_id = ? AND id = ?', [userId, id]));
     },
-    
+    // Gateway-internal lookup after the caller has verified ownership.
     getModelRaw(id) {
       return rowToModel(db.get('SELECT * FROM models WHERE id = ?', [id]));
     },

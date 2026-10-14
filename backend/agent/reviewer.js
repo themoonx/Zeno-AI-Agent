@@ -1,9 +1,9 @@
-
-
-
-
-
-
+// AI Reviewer — a second-pass, read-only review of the changes the primary
+// agent just made. Chain: Change → Review → Findings → Decision.
+// The reviewer is a SEPARATE agent pass (kind 'review', read-only catalog):
+// it inspects the actual diff built from before/after snapshot manifests and
+// reports findings before the change is considered complete. Opt-in setting,
+// default ON for code changes.
 import { randomId } from '../core/crypto.js';
 import { logger } from '../core/logger.js';
 import { projectToolActivity } from '../kernel/projections.js';
@@ -13,14 +13,16 @@ const log = logger('reviewer');
 const CODE_EXTS = /\.(js|mjs|cjs|ts|tsx|py|rb|rs|go|java|c|h|cpp|hpp|cs|php|sh|ps1|sql|json|yaml|yml|toml|html|css|jsx)$/i;
 
 export function createReviewer({ repos, kernel, orchestrator, snapshots }) {
-    function changedCodeFiles(sessionId) {
+  /** Did this session mutate any code files? (from tool events) */
+  function changedCodeFiles(sessionId) {
     const calls = projectToolActivity(kernel.replay(sessionId));
     return calls
       .filter((c) => c.ok && ['file_write', 'file_edit'].includes(c.tool) && c.file?.path && CODE_EXTS.test(c.file.path))
       .map((c) => ({ path: c.file.path, action: c.tool === 'file_edit' ? 'edited' : 'written' }));
   }
 
-    function buildDiff(beforeManifest, afterManifest, touchedPaths) {
+  /** Build a simple unified diff from before/after snapshots of touched files. */
+  function buildDiff(beforeManifest, afterManifest, touchedPaths) {
     const before = new Map((beforeManifest?.files || []).map((f) => [f.path, f]));
     const after = new Map((afterManifest?.files || []).map((f) => [f.path, f]));
     const lines = [];
@@ -35,17 +37,23 @@ export function createReviewer({ repos, kernel, orchestrator, snapshots }) {
     return lines.join('\n');
   }
 
-    async function reviewSession({ userId, sessionId, runId, conversationId, modelRowId, signal, onPlan, persistStep, publishEvent }) {
+  /**
+   * Review the changes made in a session. Runs after the primary turn.
+   * `publishEvent` (optional) receives every durable kernel event so run-scoped
+   * SSE streams can show the review live.
+   * Returns the findings event, or null when skipped.
+   */
+  async function reviewSession({ userId, sessionId, runId, conversationId, modelRowId, signal, onPlan, persistStep, publishEvent }) {
     const setting = repos.users.getSetting(userId, 'ai_reviewer');
-    const enabled = setting === null ? true : setting === true; 
+    const enabled = setting === null ? true : setting === true; // default ON
     if (!enabled) return null;
 
     const touched = changedCodeFiles(sessionId);
-    if (!touched.length) return null; 
+    if (!touched.length) return null; // only code changes are reviewed by default
 
     const session = kernel.create({ userId, kind: 'review', conversationId, runId, reuse: false });
     try {
-      
+      // Before-state: the last snapshot captured before the first mutation.
       const events = kernel.replay(sessionId);
       const firstSnapshot = events.find((e) => e.type === 'snapshot/captured');
       const before = firstSnapshot ? await snapshots.load(userId, firstSnapshot.data.snapshotId).catch(() => null) : null;
@@ -92,7 +100,7 @@ export function createReviewer({ repos, kernel, orchestrator, snapshots }) {
 
       const reviewEvent = kernel.append(session.id, userId, 'review/findings', { reviewId: session.id, verdict, findings, diffSummary, touchedFiles: touched.map((t) => t.path) });
       publishEvent?.(reviewEvent);
-      
+      // Also surface in the PRIMARY session so the chat renders the card.
       const primaryEvent = kernel.append(sessionId, userId, 'review/findings', { reviewId: session.id, verdict, findings, diffSummary });
       publishEvent?.(primaryEvent);
       kernel.end(session.id, userId, 'complete');

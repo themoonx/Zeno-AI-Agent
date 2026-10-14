@@ -1,8 +1,8 @@
-
-
-
-
-
+// Schedules API — cron-triggered agent runs. The scheduler loop (backend/
+// scheduler/index.js) already owns claiming, duplicate protection, and
+// concurrency; these routes are its create/update/inspect surface so schedules
+// can be managed from the UI, the CLI, or any RPC client. Runs always start
+// through runsService — the SAME runtime as interactive chat.
 import { Router } from 'express';
 import { validate } from '../core/validate.js';
 import { errors } from '../core/errors.js';
@@ -104,8 +104,8 @@ export function createScheduleRoutes({ repos, runs, audit }) {
     }
   });
 
-  
-  
+  // Manual trigger — same claim/concurrency bookkeeping as a cron fire,
+  // without waiting for the next scheduled minute.
   router.post('/:id/trigger', async (req, res, next) => {
     try {
       const schedule = repos.schedules.get(req.auth.userId, req.params.id);

@@ -1,7 +1,11 @@
-
+/* ── Layout: app frame, sidebar, topbar, view containers, responsive ────── */
 .app { height: 100vh; height: 100dvh; display: flex; position: relative; }
 
-
+/* ── Sidebar ────────────────────────────────────────────────────────────────
+   Three stacked regions: fixed brand row, scrollable body, fixed account row.
+   The body is the only flex:1 child so the header and footer never compress.
+   Every control is a full-height row with a fixed-width icon column, which is
+   what keeps icons and labels sharing one edge. */
 .sidebar {
   width: var(--sidebar-w); flex: none;
   background: var(--bg-raise);
@@ -20,7 +24,7 @@
   pointer-events: none;
 }
 
-
+/* Brand row */
 .sidebar-brand {
   flex: none;
   display: flex; align-items: center; gap: 6px;
@@ -44,7 +48,7 @@
 .sidebar-head { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px 6px; }
 .sidebar-head .new-chat { width: 100%; justify-content: center; }
 
-
+/* Nav: primary destinations, then a labelled workspace group. */
 .sidebar-nav {
   flex: none;
   display: flex; flex-direction: column; gap: 1px;
@@ -74,7 +78,8 @@
 .sidebar-link > span:last-child { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sidebar-link .kbd { margin-left: auto; flex: none; }
 
-
+/* Fixed icon column: every glyph occupies the same box so icons share one
+   edge, labels share another, and rows never jitter. */
 .sidebar-link > svg,
 .sidebar-link > span:first-child {
   width: 18px; height: 18px; flex: none;
@@ -85,10 +90,10 @@
 .sidebar-link > span:first-child svg { width: 18px; height: 18px; }
 .sidebar-link:hover > span:first-child { color: var(--text-2); }
 
-
+/* Body: the conversation list. */
 .sidebar-body { flex: 1; overflow-y: auto; padding: 0 12px 14px; min-height: 0; }
 
-
+/* Footer: settings + account. */
 .sidebar-foot { flex: none; padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 2px; }
 .account-button {
   display: flex; align-items: center; gap: 10px;
@@ -113,7 +118,7 @@
 .account-copy strong { font-size: var(--fs-md); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .account-copy span { font-size: var(--fs-xs); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-
+/* ── Main column ──────────────────────────────────────────────────────────── */
 .main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--bg); position: relative; }
 
 .topbar {
@@ -132,12 +137,12 @@
 .view-inner { max-width: 1120px; margin: 0 auto; padding: 32px 32px 72px; width: 100%; }
 .view-inner.narrow { max-width: 860px; }
 
-
+/* View headers */
 .view-head { margin-bottom: 24px; }
 .view-head h1 { font-size: var(--fs-2xl); font-weight: 700; letter-spacing: -0.025em; line-height: 1.15; }
 .view-head p { color: var(--text-2); margin-top: 6px; max-width: 68ch; font-size: var(--fs-md); }
 
-
+/* Empty states — an invitation, not a dead end */
 .empty {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   text-align: center; padding: 56px 24px; gap: 12px; color: var(--text-2);
@@ -153,7 +158,7 @@
 .empty p { max-width: 46ch; font-size: var(--fs-md); }
 .empty .empty-actions { display: flex; gap: 10px; margin-top: 8px; }
 
-
+/* ── Responsive: mobile sidebar overlay drawer ───────────────────────────── */
 @media (max-width: 860px) {
   .sidebar {
     position: fixed; left: 0; top: 0; bottom: 0;
@@ -173,7 +178,7 @@
 }
 .app.sidebar-open .sidebar-scrim { opacity: 1; pointer-events: auto; }
 
-
+/* Wide screens breathe a little more */
 @media (min-width: 1600px) {
   .view-inner { max-width: 1200px; }
 }

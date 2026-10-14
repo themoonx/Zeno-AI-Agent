@@ -1,7 +1,7 @@
-
-
-
-
+// Skill loading tool — the progressive-disclosure half of the skills system.
+// The system prompt carries only a roster (slug + description); the model calls
+// this to pull a skill's full instructions when it becomes relevant. Loading is
+// read-only, cheap, and never gated.
 export function createSkillLoadTool({ harness }) {
   return {
     name: 'skill_load',

@@ -1,10 +1,10 @@
-
-
-
-
-
-
-
+// Intelligence-layer verification: the Jev decision engine (routing,
+// classification, retry policy), the cost-aware ModelRouter, the CostGovernor,
+// parallel tool dispatch, the VerificationEngine — plus end-to-end behavior
+// over real HTTP (direct chat stays simple, agent turns still act, settings
+// validation, cost/stats APIs, remote-Jev graceful degradation).
+//
+// Run: node scripts/intelligence.test.js   (boots its own server on PORT 3110)
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -23,7 +23,7 @@ function ok(name, cond, extra = '') {
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
-
+// ── unit: decision heuristics ─────────────────────────────────────────────────
 console.log('── Decision heuristics (deterministic System One) ──────────');
 {
   const { classify } = await import('../backend/decision/heuristics.js');
@@ -54,7 +54,7 @@ console.log('── Decision heuristics (deterministic System One) ────�
   ok('remote decisions are coerced to the safe schema (bad fields fall back, confidence clamps)', coerced.executionMode === 'agent' && coerced.modelTier === fallback.modelTier && coerced.confidence === 1 && coerced.taskType === 'research', JSON.stringify(coerced));
 }
 
-
+// ── unit: model tier classification ───────────────────────────────────────────
 console.log('── ModelRouter tier classification ─────────────────────────');
 {
   const { classifyModelRow } = await import('../backend/routing/model-router.js');
@@ -69,7 +69,7 @@ console.log('── ModelRouter tier classification ─────────�
   ok('unknown ids default to balanced', classifyModelRow(row('stub-chat-1')) === 'balanced');
 }
 
-
+// ── unit: purpose routing with a stub repo ────────────────────────────────────
 console.log('── ModelRouter purpose routing ─────────────────────────────');
 {
   const { createModelRouter } = await import('../backend/routing/model-router.js');
@@ -108,7 +108,7 @@ console.log('── ModelRouter purpose routing ──────────�
   ok('escalation at the top tier returns null', fullRouter.escalationModel('u', 'm_premium') === null);
 }
 
-
+// ── unit: failure classification + retry policy ───────────────────────────────
 console.log('── Retry intelligence ──────────────────────────────────────');
 {
   const { classifyError, createDecisionEngine } = await import('../backend/decision/engine.js');
@@ -126,7 +126,7 @@ console.log('── Retry intelligence ─────────────�
   ok('backoff delay is bounded and jittered', plan.delayMs > 200 && plan.delayMs <= 2000, String(plan.delayMs));
 }
 
-
+// ── unit: cost governor ───────────────────────────────────────────────────────
 console.log('── CostGovernor ────────────────────────────────────────────');
 {
   const { createCostGovernor, priceFor, estimateCost } = await import('../backend/routing/cost.js');
@@ -164,7 +164,7 @@ console.log('── CostGovernor ───────────────�
   ok('completed calls land in the ledger', ledger.length === 1 && ledger[0].modelId === 'gpt-4o');
 }
 
-
+// ── unit: verification engine ─────────────────────────────────────────────────
 console.log('── VerificationEngine ──────────────────────────────────────');
 {
   const { createVerificationEngine } = await import('../backend/agent/verification.js');
@@ -184,7 +184,7 @@ console.log('── VerificationEngine ─────────────�
   ok('basic verification catches empty answers', empty.ok === false && empty.issues.length === 1);
 }
 
-
+// ── unit: parallel tool dispatch ──────────────────────────────────────────────
 console.log('── Parallel tool dispatch ──────────────────────────────────');
 {
   const { executeToolCalls } = await import('../backend/agent/orchestrator.js');
@@ -224,7 +224,7 @@ console.log('── Parallel tool dispatch ────────────�
   ok('results are complete and ordered past the parallel cap', overflow.length === 5 && overflow.every((o) => o.ok));
 }
 
-
+// ── E2E: real HTTP against the booted server ──────────────────────────────────
 async function api(method, p, body, token) {
   const res = await fetch(BASE + '/api' + p, {
     method,
@@ -276,7 +276,7 @@ for (let i = 0; i < 40; i++) {
   try {
     const res = await api('GET', '/health');
     if (res.status === 200) { serverUp = true; break; }
-  } catch {  }
+  } catch { /* retry */ }
 }
 ok('server up (isolated data dir)', serverUp);
 
@@ -288,36 +288,36 @@ try {
   const model = await api('POST', `/providers/${prov.json.provider.id}/models`, { modelId: 'stub-chat-1', displayName: 'Stub Chat', capabilities: ['chat', 'tools'] }, token);
   await api('PATCH', '/settings', { settings: { default_model: { modelId: model.json.model.id } } }, token);
 
-  
+  // Decision preview API.
   const previewAgent = await api('GET', `/decision/preview?q=${encodeURIComponent('Research the latest developments in fusion energy and compare the leading approaches')}`, null, token);
   ok('preview routes research to agent mode', previewAgent.status === 200 && previewAgent.json.decision.executionMode === 'agent' && previewAgent.json.decision.taskType === 'research', JSON.stringify(previewAgent.json?.decision));
   const previewChat = await api('GET', `/decision/preview?q=${encodeURIComponent('hey there')}`, null, token);
   ok('preview keeps greetings in direct chat', previewChat.status === 200 && previewChat.json.willRouteAgent === false, JSON.stringify(previewChat.json));
 
-  
+  // Direct chat: no tool surface, answer streams, turn completes.
   const chat = await chatTurn(token, 'hey there!');
   ok('direct chat turn completes with text', chat.frames.some((f) => f.type === 'done' && f.status === 'complete'));
   ok('direct chat offers no tools (no activity cards)', !chat.frames.some((f) => f.type === 'activity' && f.kind === 'tool_call'), JSON.stringify(chat.frames.filter((f) => f.type === 'activity').map((f) => f.kind)));
 
-  
+  // Agent turn through the new pipeline (regression: sensitive tool + approval flow still works).
   await api('PATCH', '/settings', { settings: { permission_mode: 'full' } }, token);
   const agentTurn = await chatTurn(token, 'USE_TERMINAL: compute');
   ok('agent turn still executes tools end-to-end', agentTurn.frames.some((f) => f.type === 'activity' && f.kind === 'tool_result' && (f.output || '').includes('42')), JSON.stringify(agentTurn.frames.filter((f) => f.type === 'activity').map((f) => f.kind)));
 
-  
+  // Verification stage appears for agent turns when the floor is raised.
   await api('PATCH', '/settings', { settings: { verification: { enabled: true, minimum_level: 'strict' } } }, token);
   const verTurn = await chatTurn(token, 'USE_FILE_TOOL: write intel-verify.txt');
   ok('verification stage emits its activity card', verTurn.frames.some((f) => f.type === 'activity' && f.kind === 'verification'), JSON.stringify(verTurn.frames.filter((f) => f.type === 'activity').map((f) => f.kind)));
   ok('verified agent turn still completes with a final answer', verTurn.frames.some((f) => f.type === 'done' && f.status === 'complete'));
   await api('PATCH', '/settings', { settings: { verification: { enabled: true, minimum_level: 'none' } } }, token);
 
-  
+  // Learning stats recorded from the completed turns.
   const stats = await api('GET', '/decision/stats', null, token);
   ok('routing statistics accumulate per task type', stats.status === 200 && (stats.json.stats || []).length >= 1, JSON.stringify(stats.json));
   const reset = await api('POST', '/decision/stats/reset', {}, token);
   ok('routing statistics are resettable', reset.status === 200 && reset.json.ok === true);
 
-  
+  // Settings validation.
   const badEndpoint = await api('PATCH', '/settings', { settings: { jev: { endpoint: 'ftp://nope' } } }, token);
   ok('jev endpoint must be http(s)', badEndpoint.status === 400);
   const badMode = await api('PATCH', '/settings', { settings: { model_routing: { mode: 'turbo' } } }, token);
@@ -326,19 +326,19 @@ try {
   ok('valid jev config is accepted', goodJev.status === 200, JSON.stringify(goodJev.json));
   ok('jev api key never echoes back to the client', goodJev.json?.settings?.jev?.api_key === '__set__', JSON.stringify(goodJev.json?.settings?.jev));
 
-  
+  // Remote Jev provider configured but returning non-JSON → graceful fallback.
   const degraded = await api('GET', `/decision/preview?q=${encodeURIComponent('research quantum computing breakthroughs')}`, null, token);
   ok('remote Jev failure degrades to the deterministic classifier', degraded.status === 200 && degraded.json.decision.source === 'heuristic' && degraded.json.decision.executionMode === 'agent', JSON.stringify(degraded.json?.decision));
 
-  
+  // Cost summary API.
   const cost = await api('GET', '/cost/summary', null, token);
   ok('cost summary exposes budgets + per-model pricing', cost.status === 200 && cost.json.budgets && typeof cost.json.pricing === 'object' && cost.json.pricing[model.json.model.id], JSON.stringify(Object.keys(cost.json || {})));
   ok('spend tracking recorded the stub turns (zero-priced but present)', typeof cost.json.today?.cost === 'number');
   const badBudget = await api('PATCH', '/settings', { settings: { cost_governor: { per_day_usd: -5 } } }, token);
   ok('negative budgets are rejected', badBudget.status === 400);
 
-  
-  
+  // Research workflow enabled: the turn must complete whether or not the
+  // (real) web search reaches the network — no hard dependency, no fake data.
   await api('PATCH', '/settings', { settings: { research: { enabled: true, max_subqueries: 2 } } }, token);
   const researchTurn = await chatTurn(token, 'Research the history of Unix and give a short summary');
   ok('research turn completes without erroring', researchTurn.frames.some((f) => f.type === 'done') && !researchTurn.frames.some((f) => f.type === 'error'), JSON.stringify(researchTurn.frames.filter((f) => f.type === 'error').map((f) => f.message)));

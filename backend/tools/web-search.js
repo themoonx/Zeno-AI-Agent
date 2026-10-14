@@ -1,10 +1,10 @@
-
-
-
-
-
-
-
+// Web search tool. Uses Tavily or Brave when a server key is configured;
+// otherwise falls back to DuckDuckGo (keyless, real requests). The DuckDuckGo
+// path is deliberately defensive: three endpoint strategies (html GET, html
+// POST, lite), attribute-order/quote-style tolerant block parsing, positional
+// snippet pairing, one retry per provider, and the caller's abort signal wired
+// into every fetch. No mocked results — if all sources fail, the error names
+// each attempt so the agent (and the user) can see what happened.
 import { config } from '../core/config.js';
 import { assertSafeUrl } from './ssrf.js';
 
@@ -71,8 +71,8 @@ async function braveSearch(query, { maxResults, signal }) {
   };
 }
 
-
-
+// ── DuckDuckGo ───────────────────────────────────────────────────────────────
+// Three strategies, tried in order — each returns parsed results or throws.
 
 async function ddgFetch(url, { method = 'GET', body, signal }) {
   const res = await fetch(url, {
@@ -84,7 +84,7 @@ async function ddgFetch(url, { method = 'GET', body, signal }) {
   if (res.status === 403 || res.status === 429) throw new Error(`DuckDuckGo returned ${res.status} (rate limited)`);
   if (!res.ok) throw new Error(`DuckDuckGo returned ${res.status}`);
   const html = await res.text();
-  
+  // Anomaly/captcha interstitials parse to zero results — surface that clearly.
   if (/anomaly|captcha|unusual traffic/i.test(html.slice(0, 2000)) && !/result__a|result-link/i.test(html)) {
     throw new Error('DuckDuckGo served a bot-check page');
   }
@@ -93,18 +93,18 @@ async function ddgFetch(url, { method = 'GET', body, signal }) {
 
 async function duckDuckGoSearch(query, { maxResults, signal }) {
   const strategies = [
-    
+    // 1. html endpoint, GET (classic)
     async () => {
       const url = new URL('https://html.duckduckgo.com/html/');
       url.searchParams.set('q', query);
       return ddgFetch(url, { signal });
     },
-    
+    // 2. html endpoint, POST form (often served when GET is throttled)
     async () => {
       const body = new URLSearchParams({ q: query, b: '' });
       return ddgFetch(new URL('https://html.duckduckgo.com/html/'), { method: 'POST', body: body.toString(), signal });
     },
-    
+    // 3. lite endpoint (different markup, very stable table layout)
     async () => {
       const url = new URL('https://lite.duckduckgo.com/lite/');
       url.searchParams.set('q', query);
@@ -127,8 +127,8 @@ async function duckDuckGoSearch(query, { maxResults, signal }) {
   throw new Error(`DuckDuckGo failed (${errorsSeen.join('; ')})`);
 }
 
-
-
+// Anchor matcher: attribute-order and quote-style agnostic. Extracts
+// { index, attrs, inner } for every <a ...>...</a>.
 const ANCHOR_RE = /<a\b([^>]*)>([\s\S]*?)<\/a>/gi;
 function attrValue(attrs, name) {
   const re = new RegExp(`\\b${name}\\s*=\\s*("([^"]*)"|'([^']*)'|([^\\s>]+))`, 'i');
@@ -152,7 +152,7 @@ export function parseDdgHtml(html, maxResults) {
     if (!isHtmlResult && !isLiteResult) continue;
 
     let href = attrValue(attrs, 'href') || '';
-    
+    // DDG wraps outbound URLs: //duckduckgo.com/l/?uddg=<encoded>&rut=…
     const uddg = href.match(/[?&]uddg=([^&]+)/);
     if (uddg) {
       try {
@@ -162,17 +162,17 @@ export function parseDdgHtml(html, maxResults) {
       }
     }
     if (href.startsWith('//')) href = 'https:' + href;
-    if (!/^https?:\/\
-    if (/duckduckgo\.com\/y\.js/i.test(href)) continue; 
-    if (/duckduckgo\.com\/l\/\?$/i.test(href)) continue; 
+    if (!/^https?:\/\//i.test(href)) continue;
+    if (/duckduckgo\.com\/y\.js/i.test(href)) continue; // ad/trackered links
+    if (/duckduckgo\.com\/l\/\?$/i.test(href)) continue; // bare redirect, no target
 
     const title = stripTags(inner);
     if (!title) continue;
 
-    
-    
-    
-    
+    // Snippet: the next result__snippet / result-snippet element AFTER this
+    // link and before the next RESULT anchor — positional, so ads skipping
+    // snippets cannot misalign the pairing. (Snippet elements are themselves
+    // <a> tags in the html layout, so cutting at "any anchor" would be wrong.)
     const rest = html.slice(match.index + full.length, match.index + full.length + 3000);
     const nextResult = rest.search(/<a\b[^>]*class\s*=\s*["'][^"']*\b(result__a|result-link)\b/i);
     const window = nextResult === -1 ? rest : rest.slice(0, nextResult);

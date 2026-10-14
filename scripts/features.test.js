@@ -1,9 +1,9 @@
-
-
-
-
-
-
+// Feature verification for the Zeno agent-harness additions:
+//   1. Permission modes actually gate execution (full vs ask, terminal in chat)
+//   2. Plan Mode: plan frame → approval → execution → persisted plan message
+//   3. Advanced memory: dedupe/reinforce, supersede, importance, consolidate
+//   4. Local computer bridge: root enforcement + read/write/edit/delete
+// Run: node scripts/features.test.js   (boots its own server on PORT 3100)
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -80,7 +80,7 @@ async function chatTurn(token, content, extra = {}) {
       approvalResolve(ev);
     }
   });
-  
+  // Stream ended: settle the approval promise even when no approval happened.
   approvalResolve(null);
   return { frames, conv, approvalFrame };
 }
@@ -88,7 +88,7 @@ async function chatTurn(token, content, extra = {}) {
 async function main() {
   console.log('── Zeno new-features verification ─────────────────────────');
 
-  
+  // Boot stub + server (with the local bridge enabled, rooted at a temp dir).
   const localRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'zeno-local-'));
   const stub = spawn(process.execPath, [path.join(import.meta.dirname, 'stub-provider.js')], { env: { ...process.env, STUB_PORT: String(STUB_PORT), ZENO_LOCAL_ROOTS: localRoot }, stdio: 'ignore' });
   const server = spawn(process.execPath, ['backend/server.js'], {
@@ -98,8 +98,8 @@ async function main() {
   await wait(2200);
 
   try {
-    
-    
+    // Poll for readiness instead of a fixed sleep — a cold FS cache can push
+    // boot past 2s on Windows.
     let health = null;
     for (let i = 0; i < 30; i++) {
       const res = await api('GET', '/health').catch(() => null);
@@ -108,7 +108,7 @@ async function main() {
     }
     ok('server up with local bridge', health?.status === 200);
 
-    
+    // ── 1. Permission modes gate execution ──────────────────────────────
     const token = await setupUser();
 
     await api('PATCH', '/settings', { settings: { permission_mode: 'ask' } }, token);
@@ -128,7 +128,7 @@ async function main() {
     const writeResult = wsWrite.frames.find((f) => f.type === 'activity' && f.kind === 'tool_result');
     ok('file_write result carries a preview payload for the chat UI', !!writeResult?.file?.path && typeof writeResult.file.content === 'string');
 
-    
+    // ── 2. Plan Mode ────────────────────────────────────────────────────
     await api('PATCH', '/settings', { settings: { permission_mode: 'ask', plan_mode: true } }, token);
     const planTurn = await chatTurn(token, 'USE_FILE_TOOL: write planned.txt');
     const planFrame = planTurn.frames.find((f) => f.type === 'plan' && f.phase === 'ready');
@@ -140,7 +140,7 @@ async function main() {
     const msgs = (await api('GET', `/conversations/${planTurn.conv.id}`, null, token)).json.messages;
     ok('plan persisted as a replayable message', msgs.some((m) => m.attachments?.kind === 'plan' && m.attachments?.status === 'approved'));
 
-    
+    // ── 3. Advanced memory pipeline ─────────────────────────────────────
     await api('PATCH', '/settings', { settings: { plan_mode: false } }, token);
     await api('POST', '/memory', { kind: 'preference', content: 'User prefers concise answers with examples' }, token);
     await api('POST', '/memory', { kind: 'preference', content: 'User prefers concise answers with examples' }, token);
@@ -148,7 +148,7 @@ async function main() {
     const prefCount = list1.memories.filter((m) => m.content.includes('concise answers')).length;
     ok('duplicate memory reinforced instead of duplicated', prefCount === 1, `count=${prefCount}`);
 
-    
+    // Similar but conflicting statement → should supersede, not coexist.
     await api('POST', '/memory', { kind: 'preference', content: 'User prefers brief concise answers' }, token);
     const list2 = (await api('GET', '/memory', null, token)).json;
     const active = list2.memories.filter((m) => m.status === 'active' && m.content.toLowerCase().includes('prefers'));
@@ -160,9 +160,9 @@ async function main() {
     const consolidate = await api('POST', '/memory/consolidate', {}, token);
     ok('consolidation runs and reports stats', consolidate.status === 200 && typeof consolidate.json.merged === 'number' && typeof consolidate.json.remaining === 'number');
 
-    
-    
-    
+    // ── 4. Local computer bridge (unit-level: roots + CRUD) ─────────────
+    // The bridge module reads config at import time — enable it in THIS
+    // process (the spawned server got its own copy of the env).
     process.env.ZENO_LOCAL_BRIDGE = '1';
     process.env.ZENO_LOCAL_ROOTS = localRoot;
     const { localFsAvailable, localTools } = await import('../backend/tools/local-bridge.js');
@@ -186,7 +186,7 @@ async function main() {
     const localToolNames = (await api('GET', '/runs/tools', null, token)).json.tools.map((t) => t.name);
     ok('local tools offered through the harness catalog', ['local_read', 'local_write', 'local_edit', 'local_delete', 'local_list'].every((n) => localToolNames.includes(n)));
 
-    
+    // ── 5. Unified runtime: persisted events + policy + skill_load ────────
     const runRow = (await api('GET', `/runs`, null, token)).json;
     const chatRuns = (runRow.runs || []).filter((r) => r.kind === 'chat');
     ok('chat turns persisted as first-class runs', chatRuns.length > 0, JSON.stringify((runRow.runs || []).slice(0, 2).map((r) => r.kind)));
@@ -195,7 +195,7 @@ async function main() {
       ok('chat turn events persisted to the session log', evs.some((e) => e.type === 'turn/start') && evs.some((e) => e.type === 'user/message'), `types=${[...new Set(evs.map((e) => e.type))].join(',')}`);
     }
 
-    
+    // Policy rules refine the mode: deny shell.exec even in full mode.
     const rule = await api('POST', '/control/permissions/rules', { subject: 'shell.exec:*', effect: 'deny' }, token);
     ok('policy rule created', rule.status === 201 && rule.json.rule?.effect === 'deny');
     await api('PATCH', '/settings', { settings: { permission_mode: 'full' } }, token);
@@ -207,20 +207,20 @@ async function main() {
     const preview = await api('POST', '/control/permissions/preview', { tool: 'file_write', path: 'C:/work/x.txt' }, token);
     ok('permissions preview endpoint returns a verdict', !!preview.json.decision, JSON.stringify(preview.json));
 
-    
+    // skill_load: progressive loading through the capability catalog.
     const skillLoad = (await api('POST', '/harness/skills/match', { query: 'deep research on webgpu' }, token)).json;
     ok('skill match still works for the roster', Array.isArray(skillLoad.matched));
     const tools2 = (await api('GET', '/runs/tools', null, token)).json.tools;
     ok('skill_load offered as a capability', tools2.some((t) => t.name === 'skill_load'), tools2.map((t) => t.name).join(','));
 
-    
+    // ── 6. Local agent daemon e2e: pair → connect → operate through it ───
     const pair = await api('POST', '/control/environments/agents', { name: 'Test Laptop', roots: localRoot }, token);
     ok('local agent pairing created', pair.status === 201 && !!pair.json.token, JSON.stringify(pair.json.agent || {}));
     const daemonToken = pair.json.token;
     const daemon = spawn(process.execPath, [path.join(import.meta.dirname, '..', 'local-agent', 'agent.js'), '--server', BASE, '--token', daemonToken, '--roots', localRoot], { stdio: 'ignore' });
     let daemonFile = path.join(localRoot, 'daemon-e2e.txt');
     try {
-      
+      // The daemon needs a WS connection; poll the environments endpoint.
       let online = false;
       for (let i = 0; i < 20; i++) {
         await wait(500);
@@ -229,9 +229,9 @@ async function main() {
       }
       ok('daemon connects and shows online', online);
 
-      
-      
-      
+      // Drive a real local_write through the full pipeline: chat → orchestrator
+      // → policy (full mode) → local_write tool → execution layer → WS relay →
+      // daemon → real file on disk.
       await api('PATCH', '/settings', { settings: { permission_mode: 'full' } }, token);
       const daemonTurn = await chatTurn(token, 'USE_LOCAL_TOOL: write daemon-e2e.txt');
       const localResult = daemonTurn.frames.find((f) => f.type === 'activity' && f.kind === 'tool_result' && f.tool === 'local_write');
@@ -240,7 +240,7 @@ async function main() {
       if (fs.existsSync(daemonFile)) {
         ok('daemon-written content matches', fs.readFileSync(daemonFile, 'utf8').includes('local agent relay'));
       }
-      
+      // Paths outside the roots must be refused (defense in depth: both sides).
       const refused = await api('POST', '/control/permissions/preview', { tool: 'local_write', path: path.join(os.tmpdir(), 'outside.txt') }, token);
       ok('outside-root preview verdict computed', ['allow', 'ask', 'deny'].includes(refused.json.decision));
     } finally {
@@ -248,9 +248,9 @@ async function main() {
     }
     await api('DELETE', `/control/environments/agents/${pair.json.agent.id}`, null, token);
 
-    
-    
-    
+    // ── 7. Workspace undo / redo (transactional snapshots) ───────────────
+    // The undo stack is derived from the session event log; undo restores the
+    // pre-mutation workspace and writes a snapshot row the thread can replay.
     await api('PATCH', '/settings', { settings: { permission_mode: 'full' } }, token);
     const me = (await api('GET', '/auth/me', null, token)).json;
     const userId = me.user?.id;
@@ -270,9 +270,9 @@ async function main() {
     const emptyUndo = await api('POST', '/chat/undo', { conversationId: undoTurn.conv.id }, token);
     ok('second undo consumes the redo-point checkpoint (still consistent)', emptyUndo.status === 200 || emptyUndo.status === 400);
 
-    
-    
-    
+    // ── 8. Policy re-evaluation cascade ──────────────────────────────────
+    // While an approval is pending, adding an allow rule must re-judge it:
+    // now-allowed → auto-approved without a human decision.
     await api('PATCH', '/settings', { settings: { permission_mode: 'ask' } }, token);
     const reevalConv = (await api('POST', '/conversations', { title: 'Reeval' }, token)).json.conversation;
     const reevalRes = await fetch(BASE + '/api/chat/stream', {
@@ -287,7 +287,7 @@ async function main() {
       reevalFrames.push(ev);
       if (ev.type === 'approval_required' && ev.tool === 'terminal' && !sawReevalApproval) {
         sawReevalApproval = true;
-        
+        // Let the gate settle as pending, then change policy mid-wait.
         setTimeout(async () => {
           const created = await api('POST', '/control/permissions/rules', { subject: 'shell.exec:*', effect: 'allow' }, token);
           reevalRuleId = created.json?.rule?.id || null;
@@ -299,7 +299,7 @@ async function main() {
     ok('policy re-evaluation: nothing left pending', (pendingAfter || []).length === 0, JSON.stringify(pendingAfter || []).slice(0, 120));
     if (reevalRuleId) await api('DELETE', `/control/permissions/rules/${reevalRuleId}`, null, token);
 
-    
+    // ── 9. Schedules API (cron-triggered runs through the same runtime) ───
     const badCron = await api('POST', '/schedules', { name: 'Bad', cron: 'not-a-cron', task: 'x' }, token);
     ok('schedules: invalid cron rejected', badCron.status === 400);
     const sched = await api('POST', '/schedules', { name: 'Nightly digest', cron: '* * * * *', task: 'Summarize the workspace.' }, token);
@@ -315,13 +315,13 @@ async function main() {
     await api('DELETE', `/schedules/${sched.json.schedule.id}`, null, token);
     ok('schedules: delete works', (await api('GET', '/schedules', null, token)).json.schedules.length === 0);
 
-    
+    // ── 10. Observability: telemetry actually records the real path ──────
     const telemetry = (await api('GET', '/control/telemetry?sinceHours=24', null, token)).json.summary;
     ok('telemetry: model calls recorded', telemetry && Number(telemetry.modelCalls) > 0, JSON.stringify(telemetry || {}));
     ok('telemetry: tool executions recorded', Number(telemetry?.toolCalls) > 0);
     ok('telemetry: permission decisions recorded', Number(telemetry?.byKind?.['permission.decision'] || 0) > 0);
 
-    
+    // ── 11. Typed projections (pure functions of the event log) ──────────
     const { projectPlan, projectUsage, projectSubagents, projectReviews, projectMessageRows } = await import('../backend/kernel/projections.js');
     const synthEvents = [
       { seq: 1, type: 'user/message', data: { content: 'hello', messageId: 'm1' } },

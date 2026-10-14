@@ -1,21 +1,21 @@
-
-
-
-
-
-
-
-
-
-
+// Runtime control — two distinct execution transitions the audit requires:
+//
+//   Abort  — interrupt the current in-flight operation. The turn ends
+//            (`turn/aborted`), the session and its history survive, and the
+//            user can continue the conversation.
+//   Stop   — terminate the session: abort + dispose every resource the
+//            session's lifecycle registry holds (streams, child processes,
+//            subagent sessions), mark `session/stopped`, close the session.
+//
+// Both are runtime transitions, not UI flags — the backend owns them.
 import { logger } from '../core/logger.js';
 import { getDisposals } from '../kernel/lifecycle-registry.js';
 
 const log = logger('control');
 
-
-
-const active = new Map(); 
+// In-flight abort controllers per session (chat turns register theirs here so
+// the Stop transition can abort whatever is running, even across requests).
+const active = new Map(); // sessionId -> Set<AbortController>
 
 export function trackAbort(sessionId, controller) {
   if (!active.has(sessionId)) active.set(sessionId, new Set());
@@ -29,7 +29,7 @@ function abortAll(sessionId) {
   for (const c of [...(set || [])]) {
     try {
       c.abort();
-    } catch {  }
+    } catch { /* already aborted */ }
   }
   active.delete(sessionId);
   return count;
@@ -37,7 +37,8 @@ function abortAll(sessionId) {
 
 export function createRuntimeControl({ repos, kernel }) {
   return {
-        async abort({ userId, sessionId }) {
+    /** Abort: interrupt in-flight work; the session remains active. */
+    async abort({ userId, sessionId }) {
       const session = repos.sessions.get(sessionId);
       if (!session || session.userId !== userId) return { ok: false, error: 'Session not found' };
       const interrupted = abortAll(sessionId);
@@ -46,7 +47,8 @@ export function createRuntimeControl({ repos, kernel }) {
       return { ok: true, interrupted, sessionStatus: repos.sessions.get(sessionId)?.status };
     },
 
-        async stop({ userId, sessionId }) {
+    /** Stop: abort + dispose session resources + close the session. */
+    async stop({ userId, sessionId }) {
       const session = repos.sessions.get(sessionId);
       if (!session || session.userId !== userId) return { ok: false, error: 'Session not found' };
       abortAll(sessionId);
@@ -57,7 +59,8 @@ export function createRuntimeControl({ repos, kernel }) {
       return { ok: true, disposalErrors: errors };
     },
 
-        status(sessionId) {
+    /** Status of a session (active | ended | stopped | failed). */
+    status(sessionId) {
       return repos.sessions.get(sessionId)?.status || null;
     },
   };

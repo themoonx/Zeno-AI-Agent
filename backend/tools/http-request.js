@@ -1,4 +1,4 @@
-
+// Generic HTTP request tool for APIs — real outbound calls with an SSRF guard.
 import { assertSafeUrl } from './ssrf.js';
 
 export const httpRequestTool = {
@@ -6,7 +6,7 @@ export const httpRequestTool = {
   displayName: 'HTTP Request',
   description:
     'Make an HTTP request to an API endpoint and get the response. Methods: GET/POST/PUT/PATCH/DELETE. Public internet only.',
-  sensitive: true, 
+  sensitive: true, // arbitrary outbound requests deserve a checkpoint
   parameters: {
     type: 'object',
     properties: {
@@ -43,7 +43,7 @@ export const httpRequestTool = {
       try {
         parsed = JSON.parse(text);
       } catch {
-        
+        /* leave raw */
       }
     }
     return {

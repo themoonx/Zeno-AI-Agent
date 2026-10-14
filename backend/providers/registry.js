@@ -1,5 +1,5 @@
-
-
+// Provider kinds and their defaults. Adding a provider kind = adding an entry
+// here + an adapter in backend/providers/. Nothing else changes.
 export const PROVIDER_KINDS = {
   openai: {
     label: 'OpenAI',

@@ -1,4 +1,4 @@
-
+// API client: JSON fetch wrapper + SSE stream reader for chat/agent events.
 
 const BASE = '/api';
 let sessionToken = null;
@@ -34,7 +34,7 @@ async function handle(res) {
       code = body?.error?.code || code;
       details = body?.error?.details;
     } catch {
-      
+      /* non-JSON error */
     }
     const err = new Error(message);
     err.status = res.status;
@@ -75,9 +75,9 @@ export const api = {
 
   fileUrl: (fileId) => `${BASE}/files/${fileId}/download`,
 
-  
-  
-  
+  // ── SSE streams ──────────────────────────────────────────────────────────
+  // Reads an SSE endpoint that delivers JSON payloads and invokes onEvent.
+  // Returns an abort function.
   sse(path, onEvent, { signal } = {}) {
     const controller = new AbortController();
     if (signal) signal.addEventListener('abort', () => controller.abort(), { once: true });
@@ -100,11 +100,11 @@ export const api = {
             const frame = buffer.slice(0, sep);
             buffer = buffer.slice(sep + 2);
             const dataLine = frame.split('\n').find((l) => l.startsWith('data:'));
-            if (!dataLine) continue; 
+            if (!dataLine) continue; // heartbeat / comment
             try {
               onEvent(JSON.parse(dataLine.slice(5).trim()));
             } catch {
-              
+              /* skip malformed frame */
             }
           }
         }
@@ -115,7 +115,7 @@ export const api = {
     return () => controller.abort();
   },
 
-  
+  // Streaming chat: POST that responds with SSE. onEvent gets parsed frames.
   chatStream(payload, onEvent, { signal } = {}) {
     const controller = new AbortController();
     if (signal) signal.addEventListener('abort', () => controller.abort(), { once: true });
@@ -132,7 +132,7 @@ export const api = {
           try {
             const body = await res.json();
             message = body?.error?.message || message;
-          } catch {  }
+          } catch { /* ignore */ }
           throw new Error(message);
         }
         const reader = res.body.getReader();
@@ -150,7 +150,7 @@ export const api = {
             if (!dataLine) continue;
             try {
               onEvent(JSON.parse(dataLine.slice(5).trim()));
-            } catch {  }
+            } catch { /* ignore */ }
           }
         }
       } catch (err) {

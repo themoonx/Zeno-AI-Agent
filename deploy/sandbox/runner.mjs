@@ -1,8 +1,8 @@
-
-
-
-
-
+// Zeno execution sandbox runner.
+// Receives { task_id, cmd } or { task_id, code, language } and executes it in
+// a throwaway Docker container with strict limits. Also executes in-process
+// (restricted) if the Docker socket is unavailable — always log clearly which
+// backend ran, so misconfiguration is never silent.
 import http from 'node:http';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -102,7 +102,7 @@ const server = http.createServer((req, res) => {
     };
 
     if (payload.cmd) {
-      
+      // Tokenize without a shell — no interpolation, no injection surface.
       const parts = String(payload.cmd).match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) || [];
       if (!parts.length) return finish('', 'empty command', null, false, 1);
       if (HAS_DOCKER) {

@@ -1,16 +1,63 @@
-﻿node_modules/
-data/
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Environment variables & secrets
 .env
-*.log
-dist/
-.DS_Store
-Thumbs.db
-scripts/_shots/
-coverage/
-.vscode/
-*.sqlite
+.env.*
+!.env.example
+
+# Runtime databases and user data directory
+data/
 *.db
-*.db-wal
 *.db-shm
-. m i m o s a /  
- 
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Build & distribution outputs
+dist/
+build/
+
+# Testing & coverage artifacts
+coverage/
+.nyc_output/
+scripts/_shots/
+
+# IDE and Editor configuration
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*~
+
+# Operating system files
+.DS_Store
+.DS_Store?
+._*
+[Tt]humbs.db
+[Tt]humbs.db:encryptable
+ehthumbs.db
+[Dd]esktop.ini
+
+# Agent / Tool session hooks & caches
+.mimosa/
+.v2c/
+.zcode/
+
+# Python cache artifacts
+__pycache__/
+*.py[cod]
+*$py.class

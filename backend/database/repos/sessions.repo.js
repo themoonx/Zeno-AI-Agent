@@ -38,7 +38,7 @@ export function createSessionsRepo(db) {
       const r = db.get('SELECT * FROM agent_sessions WHERE id = ?', [id]);
       return r ? rowToSession(r) : null;
     },
-    
+    // Duplicate-identity rejection: one ACTIVE session per conversation.
     activeForConversation(conversationId) {
       const r = db.get("SELECT * FROM agent_sessions WHERE conversation_id = ? AND status = 'active' ORDER BY created_at DESC LIMIT 1", [conversationId]);
       return r ? rowToSession(r) : null;
@@ -67,7 +67,7 @@ export function createSessionsRepo(db) {
         .map(rowToSession);
     },
 
-    
+    // ── events (append-only) ────────────────────────────────────────────────
     appendEvent({ sessionId, userId, type, data }) {
       const res = db.run(
         'INSERT INTO agent_events (session_id, user_id, ts, type, data) VALUES (?, ?, ?, ?, ?) RETURNING seq',
@@ -90,7 +90,7 @@ export function createSessionsRepo(db) {
       const r = db.get('SELECT COALESCE(MAX(seq), 0) AS s FROM agent_events WHERE session_id = ?', [sessionId]);
       return Number(r.s);
     },
-    
+    /** History surgery (regenerate/edit): remove superseded events from the log. */
     truncateFrom(sessionId, seq) {
       db.run('DELETE FROM agent_events WHERE session_id = ? AND seq >= ?', [sessionId, seq]);
     },

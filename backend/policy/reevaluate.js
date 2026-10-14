@@ -1,14 +1,17 @@
-
-
-
-
+// Policy re-evaluation — when rules change, pending permission requests are
+// re-judged against the new policy: now-allowed requests resolve approved,
+// now-denied requests resolve denied. Waiting users get feedback instead of
+// stale gates.
 import { publish, topics } from '../core/eventbus.js';
 import { logger } from '../core/logger.js';
 
 const log = logger('policy');
 
 export function createPolicyReevaluator({ repos, policy }) {
-  
+  /**
+   * Re-evaluate every pending approval for a user against current policy.
+   * Returns the number of approvals auto-resolved.
+   */
   function reevaluatePending(userId) {
     let resolved = 0;
     for (const approval of repos.runs.listPendingApprovals(userId)) {

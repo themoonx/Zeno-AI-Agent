@@ -1,5 +1,5 @@
-
-
+// Skills repository. Rows here are USER-authored skills; built-in skills ship
+// with the app and are merged in the harness service at read time.
 import { j, pj, now } from '../helpers.js';
 
 function rowToSkill(r) {

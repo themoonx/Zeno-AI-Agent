@@ -1,4 +1,4 @@
-
+// Projects view + Memory view + Files view (smaller management surfaces).
 import { h, toast, confirmDialog, openModal, timeAgo, fmtBytes, fmtTokens } from '../ui.js';
 import { icon } from '../icons.js';
 import { store } from '../state.js';
@@ -6,7 +6,7 @@ import { api } from '../api.js';
 
 const PROJECT_COLORS = ['#8B5CF6', '#6AA8EF', '#A78BFA', '#E8B45A', '#E5646E', '#8B93A3'];
 
-
+// ── Projects ────────────────────────────────────────────────────────────────
 export function mountProjectsView(root) {
   const view = h('div', { class: 'view' }, h('div', { class: 'view-inner' }));
   root.append(view);
@@ -123,7 +123,7 @@ export function mountProjectsView(root) {
   return { destroy() { window.removeEventListener('zeno:new-project', onNew); } };
 }
 
-
+// ── Memory ──────────────────────────────────────────────────────────────────
 export function mountMemoryView(root) {
   const view = h('div', { class: 'view' }, h('div', { class: 'view-inner narrow' }));
   root.append(view);
@@ -282,7 +282,7 @@ export function mountMemoryView(root) {
   return { destroy() {} };
 }
 
-
+// ── Files ───────────────────────────────────────────────────────────────────
 export function mountFilesView(root) {
   const view = h('div', { class: 'view' }, h('div', { class: 'view-inner' }));
   root.append(view);

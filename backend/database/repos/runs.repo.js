@@ -73,7 +73,7 @@ export function createRunsRepo(db) {
         .all(`SELECT * FROM agent_runs WHERE ${conds.join(' AND ')} ORDER BY created_at DESC LIMIT ?`, [...params, limit])
         .map(rowToRun);
     },
-    
+    // Kernel importer: runs that have legacy events, with owner/kind info.
     listRunsWithLegacyEvents() {
       return db
         .all(
@@ -112,7 +112,7 @@ export function createRunsRepo(db) {
       db.run('UPDATE agent_runs SET cancel_requested = 1, updated_at = ? WHERE user_id = ? AND id = ?', [now(), userId, id]);
     },
 
-    
+    // ── events ─────────────────────────────────────────────────────────────
     appendEvent({ runId, userId, type, data }) {
       const res = db.run(
         'INSERT INTO run_events (run_id, user_id, ts, type, data) VALUES (?, ?, ?, ?, ?) RETURNING seq',
@@ -132,7 +132,7 @@ export function createRunsRepo(db) {
         .reverse();
     },
 
-    
+    // ── approvals ──────────────────────────────────────────────────────────
     createApproval({ id, runId, userId, tool, summary, payload }) {
       db.run(
         "INSERT INTO approvals (id, run_id, user_id, tool, summary, payload, status, created_at) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)",
@@ -172,7 +172,7 @@ export function createRunsRepo(db) {
     hasStanding(runId, tool) {
       return !!db.get('SELECT 1 AS x FROM standing_approvals WHERE run_id = ? AND tool = ?', [runId, tool]);
     },
-    
+    // Conversation-scoped standing approval ("allow for this task" spans turns).
     hasStandingScope(userId, scopeKey, tool) {
       if (!scopeKey) return false;
       return !!db.get('SELECT 1 AS x FROM standing_approvals WHERE user_id = ? AND scope_key = ? AND tool = ?', [userId, scopeKey, tool]);

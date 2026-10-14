@@ -29,7 +29,7 @@ export function createPolicyRepo(db) {
     list(userId) {
       return db.all('SELECT * FROM policy_rules WHERE user_id = ? ORDER BY created_at ASC', [userId]).map(rowToRule);
     },
-    
+    // Ordered longest-subject-first: the most specific rule wins in the engine.
     listForDecision(userId) {
       return db
         .all('SELECT * FROM policy_rules WHERE user_id = ? ORDER BY LENGTH(subject) DESC, created_at ASC', [userId])
@@ -75,7 +75,7 @@ export function createLocalAgentsRepo(db) {
     list(userId) {
       return db.all('SELECT * FROM local_agents WHERE user_id = ? ORDER BY created_at DESC', [userId]).map(rowToAgent);
     },
-    
+    // Daemon-side authentication: hash lookup without user scoping.
     findByTokenHash(tokenHash) {
       const r = db.get('SELECT * FROM local_agents WHERE token_hash = ? AND status = ?', [tokenHash, 'active']);
       return r ? rowToAgent(r) : null;

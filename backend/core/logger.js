@@ -1,4 +1,4 @@
-
+// Structured logger. Writes NDJSON to stdout in production, human-readable in dev.
 import { config } from './config.js';
 
 const LEVELS = { debug: 10, info: 20, warn: 30, error: 40 };

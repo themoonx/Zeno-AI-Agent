@@ -1,10 +1,10 @@
-
-
-
-
-
-
-
+// Programmatic code mode — one model round trip can orchestrate many tool
+// operations through a sandboxed JS snippet instead of paying a round trip
+// per tiny call. The snippet runs in node:vm with NO direct fs/net/process —
+// its only capability is `tools.call(name, args)`, which routes through the
+// SAME executor pipeline (policy → approval → execution) as every other call.
+// The same permission and sandbox boundaries apply; the sandbox only removes
+// round trips.
 import vm from 'node:vm';
 import { randomId } from '../core/crypto.js';
 import { logger } from '../core/logger.js';
@@ -41,7 +41,7 @@ export function createCodeOrchestrateTool({ repos, executor }) {
       const sandboxConsole = { log: (...parts) => logs.push(parts.map((p) => (typeof p === 'object' ? JSON.stringify(p) : String(p))).join(' ')) };
 
       const tools = {
-        
+        // SAME pipeline as every other capability call — policy/approval apply.
         call: async (name, callArgs) => {
           if (callCount >= MAX_CALLS) throw new Error(`Budget exceeded: more than ${MAX_CALLS} tool calls in one snippet`);
           callCount++;
@@ -89,7 +89,7 @@ export function createCodeOrchestrateTool({ repos, executor }) {
         result = await vm.runInContext(`(async () => {\n${code}\n})()`, context, { timeout: MAX_WALL_MS, displayErrors: true });
       } catch (err) {
         if (err.name === 'AbortError') throw err;
-        
+        // ScriptTimeoutError / EvalError from vm surface as generic errors.
         if (/Script execution timed out/.test(err.message)) {
           throw new Error(`Code-mode budget exceeded (${MAX_WALL_MS / 1000}s wall time)`);
         }

@@ -1,5 +1,5 @@
-
-
+// Early error surface: captures uncaught module errors into window.__errs
+// so failures are observable in environments without devtools access.
 window.__errs = window.__errs || [];
 window.addEventListener('error', (e) => {
   window.__errs.push(`${e.message} @ ${e.filename}:${e.lineno}:${e.colno}`);

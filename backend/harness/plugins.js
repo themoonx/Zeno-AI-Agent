@@ -1,13 +1,13 @@
-
-
-
-
-
-
-
-
-
-
+// Plugin subsystem. A plugin is a capability PACK: it can contribute tools,
+// skills, and guidance to the harness. The core ships a set of built-in packs
+// (backend/harness/builtin-plugins.js); users can install declarative packs of
+// their own whose tools call fixed HTTP endpoints.
+//
+// Permission model (deliberately conservative):
+//   - A plugin's tools are ALWAYS sensitive: every call passes the human gate.
+//   - Endpoints are fixed in the manifest. The model fills arguments and can
+//     never choose the URL, method, or request shape.
+//   - Secrets are encrypted at rest with the same vault as providers.
 import { randomId, encryptSecret, decryptSecret } from '../core/crypto.js';
 import { errors } from '../core/errors.js';
 import { validate } from '../core/validate.js';
@@ -26,7 +26,10 @@ const CALL_TIMEOUT_MS = 60_000;
 const MAX_CHARS = 16_000;
 const MAX_MANIFEST_BYTES = 32_000;
 
-
+/**
+ * Build an executable tool descriptor from a declarative manifest entry.
+ * The endpoint/headers/secret come from stored config — never from the model.
+ */
 function toolFromSpec(spec, plugin, ctx) {
   const name = spec.name;
   return {
@@ -59,7 +62,7 @@ function toolFromSpec(spec, plugin, ctx) {
         try {
           parsed = JSON.parse(text);
         } catch {
-          
+          /* keep raw */
         }
       }
       if (!res.ok) {
@@ -80,7 +83,7 @@ function toolFromSpec(spec, plugin, ctx) {
   };
 }
 
-
+/** Validate + normalise a declarative manifest for a user plugin. */
 export function sanitizeManifest(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const json = JSON.stringify(raw);
@@ -171,7 +174,7 @@ export function createPluginService({ repos, audit, transport = requestViaPublic
     });
   }
 
-  
+  /** All plugins visible to a user (built-in + their own). */
   function list(userId) {
     return [...builtinRows(), ...userRows(userId)].map(publicPlugin);
   }
@@ -182,7 +185,7 @@ export function createPluginService({ repos, audit, transport = requestViaPublic
     return publicPlugin(row);
   }
 
-  
+  /** Skill descriptors contributed by enabled plugins. */
   function pluginSkills(userId) {
     const out = [];
     const rows = [...builtinPlugins(), ...userRows(userId).filter((r) => r.enabled)];
@@ -208,7 +211,7 @@ export function createPluginService({ repos, audit, transport = requestViaPublic
     return out;
   }
 
-  
+  /** Guidance fragments from enabled plugins, injected into the system prompt. */
   function pluginGuidance(userId) {
     const parts = [];
     for (const p of builtinPlugins()) {
@@ -221,18 +224,18 @@ export function createPluginService({ repos, audit, transport = requestViaPublic
     return parts.join('\n');
   }
 
-  
+  /** Executable tool descriptors from enabled plugins, per user. */
   async function toolCatalog(userId) {
     const tools = new Map();
 
-    
+    // Built-in packs: tools are real in-process implementations.
     for (const p of builtinPlugins()) {
       for (const tool of p.tools) {
         tools.set(tool.name, { ...tool, pluginSlug: p.slug });
       }
     }
 
-    
+    // User plugins: declarative HTTP tools, secrets decrypted per use.
     for (const row of repos.plugins.listEnabled(userId)) {
       const manifest = row.manifest;
       if (!manifest?.tools?.length) continue;

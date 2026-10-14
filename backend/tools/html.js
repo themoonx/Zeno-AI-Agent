@@ -1,10 +1,10 @@
-
-
+// Readable-text extraction from fetched HTML (no dependency): strips script/
+// style, removes tags, collapses whitespace. Good enough for agent consumption.
 export function extractReadableText(html, { maxChars = 20_000 } = {}) {
   let s = html;
   s = s.replace(/<!--[\s\S]*?-->/g, ' ');
   s = s.replace(/<(script|style|noscript|svg|iframe|head)[\s\S]*?<\/\1>/gi, ' ');
-  
+  // Keep alt text of images.
   s = s.replace(/<img[^>]*alt="([^"]*)"[^>]*>/gi, ' [image: $1] ');
   // Mark headings and block ends so text has some structure.
   s = s.replace(/<\/(h1|h2|h3|h4|p|li|tr|div|section|article|blockquote|pre)>/gi, '\n');
@@ -50,13 +50,13 @@ export function extractLinks(html, baseUrl, { maxLinks = 40 } = {}) {
     try {
       const url = new URL(m[1], base);
       if (!['http:', 'https:'].includes(url.protocol)) continue;
-      if (url.host !== base.host) continue; 
+      if (url.host !== base.host) continue; // stay on-site
       const text = m[2].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
       if (!text) continue;
       if (links.some((l) => l.url === url.toString())) continue;
       links.push({ url: url.toString(), text: text.slice(0, 120) });
     } catch {
-      
+      /* skip malformed hrefs */
     }
   }
   return links;

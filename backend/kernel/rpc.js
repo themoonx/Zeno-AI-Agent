@@ -1,9 +1,9 @@
-
-
-
-
-
-
+// Headless JSON-RPC 2.0 surface — the SAME kernel the web UI uses, exposed to
+// CLI/SDK/CI. Every method delegates to the exact functions the HTTP routes
+// call; there is no second agent implementation here.
+//
+// Transport: POST /api/rpc (JSON-RPC 2.0 envelope) — the CLI (bin/zeno.js)
+// speaks this same protocol with a session token.
 import { errors } from '../core/errors.js';
 import { logger } from '../core/logger.js';
 import { randomId } from '../core/crypto.js';
@@ -12,14 +12,14 @@ import { nextRun } from '../scheduler/cron.js';
 const log = logger('rpc');
 
 export function createRpcHandler({ repos, kernel, deps, runtimeControl, snapshots, memory }) {
-  
-  
+  // `deps` is a mutable ref the host fills after construction — it breaks the
+  // construction-order cycle (runsService → runtime → kernel).
   const getRunsService = () => {
     if (!deps?.runsService) throw errors.internal('runs service not ready');
     return deps.runsService;
   };
   const methods = {
-    
+    // ── sessions ──────────────────────────────────────────────────────────
     'session.start': async ({ userId, params }) => {
       const session = kernel.create({ userId, kind: 'chat', conversationId: params.conversationId || null });
       return { sessionId: session.id, status: session.status };
@@ -38,7 +38,7 @@ export function createRpcHandler({ repos, kernel, deps, runtimeControl, snapshot
     'session.stop': async ({ userId, params }) => runtimeControl.stop({ userId, sessionId: params.sessionId }),
     'session.abort': async ({ userId, params }) => runtimeControl.abort({ userId, sessionId: params.sessionId }),
 
-    
+    // ── runs (headless execution) ─────────────────────────────────────────
     'run.start': async ({ userId, params }) => {
       if (!params.task) throw errors.badRequest('task is required');
       const run = await getRunsService().startRun({ userId, agent: { name: params.agentName || 'Headless run', projectId: params.projectId || null }, task: String(params.task).slice(0, 8000) });
@@ -56,7 +56,7 @@ export function createRpcHandler({ repos, kernel, deps, runtimeControl, snapshot
       return { ok: true };
     },
 
-    
+    // ── approvals ────────────────────────────────────────────────────────
     'approval.pending': async ({ userId }) => ({ approvals: repos.runs.listPendingApprovals(userId) }),
     'approval.decide': async ({ userId, params }) => {
       const approval = repos.runs.getApproval(userId, params.approvalId);
@@ -65,7 +65,7 @@ export function createRpcHandler({ repos, kernel, deps, runtimeControl, snapshot
       return { ok: true };
     },
 
-    
+    // ── snapshots ─────────────────────────────────────────────────────────
     'snapshot.stack': async ({ userId, params }) => {
       const session = repos.sessions.get(params.sessionId);
       if (!session || session.userId !== userId) throw errors.notFound('Session');
@@ -75,7 +75,7 @@ export function createRpcHandler({ repos, kernel, deps, runtimeControl, snapshot
     'snapshot.redo': async ({ userId, params }) => snapshots.redo(userId, params.sessionId),
     'snapshot.restore': async ({ userId, params }) => ({ ...(await snapshots.restore(userId, params.snapshotId)) }),
 
-    
+    // ── schedules ─────────────────────────────────────────────────────────
     'schedule.list': async ({ userId }) => ({ schedules: repos.schedules.list(userId) }),
     'schedule.create': async ({ userId, params }) => {
       if (!params.name || !params.cron || !params.task) throw errors.badRequest('name, cron and task are required');
@@ -126,14 +126,14 @@ export function createRpcHandler({ repos, kernel, deps, runtimeControl, snapshot
       return { ok: true };
     },
 
-    
+    // ── memory ────────────────────────────────────────────────────────────
     'memory.search': async ({ userId, params }) => {
       const results = await memory.semanticSearch(userId, String(params.query || ''), { limit: params.limit || 8 });
       return { results: results.map((r) => ({ content: r.content, kind: r.kind, score: Number(r.score.toFixed(3)) })) };
     },
   };
 
-  
+  /** Handle one JSON-RPC 2.0 request object. Never throws — errors become JSON-RPC error responses. */
   async function handle(request, authUser) {
     const response = { jsonrpc: '2.0', id: request?.id ?? null };
     try {

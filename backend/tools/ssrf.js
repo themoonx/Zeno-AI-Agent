@@ -1,8 +1,8 @@
-
-
-
-
-
+// SSRF guard for agent-driven outbound requests (web_search, http_request,
+// browser_read). Blocks non-HTTP schemes, cloud metadata endpoints, and
+// private/loopback targets. Custom *provider* base URLs are allowed to be
+// local (Ollama/LM Studio) — that's a deliberate, user-configured exception
+// handled separately in the gateway, not here.
 import net from 'node:net';
 import dns from 'node:dns/promises';
 import { AppError } from '../core/errors.js';
@@ -20,14 +20,14 @@ function isPrivateIp(ip) {
     if (a === 10 || a === 127 || a === 0) return true;
     if (a === 172 && b >= 16 && b <= 31) return true;
     if (a === 192 && b === 168) return true;
-    if (a === 169 && b === 254) return true; 
-    if (a === 100 && b >= 64 && b <= 127) return true; 
+    if (a === 169 && b === 254) return true; // link-local incl. metadata
+    if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT
     return false;
   }
   const lower = ip.toLowerCase();
   if (lower === '::1' || lower === '::' || lower === 'fe80::1') return true;
-  if (lower.startsWith('fc') || lower.startsWith('fd')) return true; 
-  if (lower.startsWith('fe80')) return true; 
+  if (lower.startsWith('fc') || lower.startsWith('fd')) return true; // ULA
+  if (lower.startsWith('fe80')) return true; // link-local
   if (lower.startsWith('::ffff:')) return isPrivateIp(lower.slice(7));
   return false;
 }

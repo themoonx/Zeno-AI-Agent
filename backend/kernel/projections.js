@@ -1,12 +1,12 @@
-
-
-
-
-
-
-
-
-
+// Session projections — every derived view (model transcript, plan state, tool
+// activity, usage, the chat message list) is a PURE function of the session
+// event log. Nothing here consults the messages table or any other store; the
+// UI and the reconstruction invariant both consume these functions.
+//
+// Determinism contract: replaying the same events always produces the same
+// projections. Compaction is encoded as a `context/compacted` event whose data
+// carries the summary text and the event-seq coverage marker — so a replayed
+// transcript is identical to the live one without re-running any model call.
 
 export function projectMessages(events) {
   const messages = [];
@@ -31,8 +31,8 @@ export function projectMessages(events) {
         if (d.text) messages.push({ role: 'assistant', content: d.text, _seq: ev.seq });
         break;
       case 'context/compacted':
-        
-        
+        // Drop everything covered by the summary (events up to and including
+        // uptoEventSeq), then stand in the summary as a synthetic user note.
         if (d.uptoEventSeq != null) {
           const kept = messages.filter((m) => m._seq != null && m._seq > d.uptoEventSeq);
           messages.length = 0;
@@ -74,7 +74,7 @@ export function projectPlan(events) {
 }
 
 export function projectToolActivity(events) {
-  const calls = new Map(); 
+  const calls = new Map(); // callId -> card state
   const order = [];
   for (const ev of events) {
     const d = ev.data || {};
@@ -157,7 +157,11 @@ export function projectReviews(events) {
   return reviews;
 }
 
-
+/**
+ * Chat-UI message rows, derived from events — the shape the kernel's
+ * write-through message projection persists (user bubbles, assistant finals,
+ * tool rounds). Used by the importer and the invariant's message comparison.
+ */
 export function projectMessageRows(events) {
   const rows = [];
   for (const ev of events) {

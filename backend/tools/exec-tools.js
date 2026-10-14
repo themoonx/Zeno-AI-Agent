@@ -1,8 +1,8 @@
-
-
-
-
-
+// Terminal and code-execution capabilities. These are thin descriptors: the
+// actual execution goes through the ExecutionWorld seam — the shared shell
+// backends in backend/execution/shell.js (Docker sandbox or restricted local
+// child process). Both tools are `sensitive`, so the capability executor's
+// policy + approval gate always runs before either backend is reached.
 import fs from 'node:fs/promises';
 import { workspaceDirFor } from './file-tools.js';
 import { execCommand, execCode, sandboxMode } from '../execution/shell.js';

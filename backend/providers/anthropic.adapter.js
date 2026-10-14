@@ -1,4 +1,4 @@
-
+// Anthropic Messages API adapter (streaming SSE).
 import { upstreamFromResponse } from '../core/errors.js';
 
 const ANTHROPIC_VERSION = '2023-06-01';
@@ -15,7 +15,7 @@ function buildHeaders(apiKey, extraHeaders) {
 function messagesToAnthropic(messages) {
   const out = [];
   for (const m of messages) {
-    if (m.role === 'system') continue; 
+    if (m.role === 'system') continue; // passed separately
     if (m.role === 'tool') {
       out.push({
         role: 'user',
@@ -44,7 +44,7 @@ function messagesToAnthropic(messages) {
     }
     out.push({ role: m.role, content: m.content });
   }
-  
+  // Anthropic requires alternating roles starting with user; merge adjacent.
   const merged = [];
   for (const msg of out) {
     const prev = merged[merged.length - 1];

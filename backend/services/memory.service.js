@@ -1,30 +1,30 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+// Advanced memory subsystem.
+//
+// Modeled on how memory works in cognitive science and modern agent memory
+// research (Generative Agents' memory stream, MemGPT-style tiering):
+//
+//   Types          semantic (facts), preference (behavioral), episodic
+//                  (events), project (scoped), agent, summary
+//   Encoding       every write passes a selective-storage pipeline: dedupe,
+//                  conflict detection, importance scoring — nothing is stored
+//                  blindly
+//   Retrieval       relevance-ranked hybrid search: embedding cosine ∪ keyword
+//                  overlap, weighted with recency (exponential decay),
+//                  importance, and usage reinforcement; superseded/expired
+//                  memories never resurface
+//   Consolidation  merge near-duplicate traces, strengthen frequently-used
+//                  ones, expire weak stale ones (a light Ebbinghaus model)
+//
+// Retrieval should feel like recall, not a database dump: only the top,
+// currently-relevant memories are injected into context, and recalling a
+// memory reinforces it.
 import { randomId } from '../core/crypto.js';
 import { logger } from '../core/logger.js';
 import { config } from '../core/config.js';
 
 const log = logger('memory');
 
-
+// ── text similarity primitives ───────────────────────────────────────────────
 
 function cosine(a, b) {
   if (!Array.isArray(a) || !Array.isArray(b)) return 0;
@@ -52,7 +52,7 @@ function keywords(text) {
   );
 }
 
-
+// Jaccard overlap over content words — the no-embeddings similarity path.
 function jaccard(a, b) {
   const A = keywords(a);
   const B = keywords(b);
@@ -71,16 +71,16 @@ function keywordScore(query, doc) {
   return hits / q.size;
 }
 
-
+// Exponential recency decay, 14-day half-life — old context fades unless used.
 function recency(updatedAt, nowTs = Date.now()) {
   if (!updatedAt) return 0;
   const days = Math.max(0, (nowTs - updatedAt) / 86_400_000);
   return Math.pow(0.5, days / 14);
 }
 
-
-
-
+// ── importance heuristic (write-time) ────────────────────────────────────────
+// Signals: explicit memorization requests, self-identity, preferences,
+// negations, dates; penalize transient chat fragments.
 const STRONG_MARKERS = ['remember', 'important', 'always', 'never', 'my name', "i'm", 'i am', 'prefer', 'prefers', 'favorite', 'favourite', 'allergic', 'birthday', 'anniversary', 'my email', 'my phone', 'deadline', 'do not', "don't"];
 const WEAK_MARKERS = ['maybe', 'probably', 'i think', 'perhaps', 'lol', 'haha', 'thanks', 'ok'];
 
@@ -90,16 +90,16 @@ function heuristicImportance(content, kind) {
   for (const m of STRONG_MARKERS) if (text.includes(m)) score += 0.12;
   for (const m of WEAK_MARKERS) if (text.includes(m)) score -= 0.08;
   if (/\b\d{4}-\d{2}-\d{2}\b|\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i.test(text)) score += 0.05;
-  if (/[\w.+-]+@[\w-]+\.[\w.]+/.test(text)) score += 0.08; 
+  if (/[\w.+-]+@[\w-]+\.[\w.]+/.test(text)) score += 0.08; // contact info is durable
   const words = text.split(/\s+/).length;
   if (words < 4) score -= 0.15;
   if (words > 12 && words < 60) score += 0.05;
   return Math.max(0.1, Math.min(1, Number(score.toFixed(2))));
 }
 
-
-const DUP_COS = 0.93;      
-const UPDATE_COS = 0.82;   
+// ── thresholds ───────────────────────────────────────────────────────────────
+const DUP_COS = 0.93;      // same memory → reinforce, don't duplicate
+const UPDATE_COS = 0.82;   // near-same → newer information supersedes
 const DUP_JAC = 0.8;
 const UPDATE_JAC = 0.6;
 const MIN_IMPORTANCE_TO_STORE = 0.25;
@@ -108,7 +108,7 @@ export function createMemoryService({ repos, gateway }) {
   async function embeddingModelFor(userId) {
     const setting = repos.users.getSetting(userId, 'embedding_model');
     if (!setting?.modelId) return null;
-    return setting; 
+    return setting; // { providerId, modelId }
   }
 
   async function embedTexts(userId, texts) {
@@ -123,14 +123,21 @@ export function createMemoryService({ repos, gateway }) {
     }
   }
 
-  
+  // Similarity between two contents using whatever signals are available.
   function similarity(aVec, bVec, aText, bText) {
     const cos = cosine(aVec, bVec);
     if (aVec && bVec && aVec.length && bVec.length) return cos;
     return jaccard(aText, bText);
   }
 
-  
+  /**
+   * Selective storage pipeline. Every write (tool, manual, extraction) flows
+   * through here so the store stays clean:
+   *   duplicate  → reinforce the existing memory instead of storing again
+   *   near-dup   → newer content supersedes the older one (conflict handling)
+   *   trivial    → rejected when importance is too low
+   *   new        → stored with a computed importance
+   */
   async function remember({ userId, kind = 'fact', content, projectId = null, agentId = null, conversationId = null, source = null, importance = null, tags = null, subject = null, expiresAt = null }) {
     const trimmed = String(content || '').trim().slice(0, 4000);
     if (trimmed.length < 2) return { action: 'rejected', reason: 'empty' };
@@ -142,7 +149,7 @@ export function createMemoryService({ repos, gateway }) {
     let best = null;
     let bestScore = 0;
     for (const c of candidates) {
-      if (c.kind === 'summary') continue; 
+      if (c.kind === 'summary') continue; // summaries never block facts
       const score = similarity(vector, c.embedding, trimmed, c.content);
       if (score > bestScore) {
         bestScore = score;
@@ -154,14 +161,14 @@ export function createMemoryService({ repos, gateway }) {
     const updateAt = vector ? UPDATE_COS : UPDATE_JAC;
 
     if (best && bestScore >= dupAt) {
-      
+      // Same information: reinforce instead of duplicating (spaced repetition).
       repos.memory.reinforce(best.id);
       return { action: 'reinforced', id: best.id, similarity: Number(bestScore.toFixed(3)) };
     }
 
     if (best && bestScore >= updateAt && best.kind === kind) {
-      
-      
+      // Conflicting/outdated version: the new statement wins, the old one is
+      // superseded (kept for audit, excluded from retrieval).
       const id = randomId('mem');
       repos.memory.insert({
         id,
@@ -210,8 +217,8 @@ export function createMemoryService({ repos, gateway }) {
   }
 
   const service = {
-    
-    
+    // Back-compat entry point — now the selective pipeline. Returns an id when
+    // stored, or null when rejected/merged (callers only check truthiness).
     async add(opts) {
       const result = await remember(opts);
       return result.action === 'stored' || result.action === 'superseded' ? result.id : null;
@@ -236,8 +243,8 @@ export function createMemoryService({ repos, gateway }) {
       const [queryVec] = (await embedTexts(userId, [query])) || [];
       const nowTs = Date.now();
 
-      
-      
+      // Hybrid relevance: semantic (or lexical) similarity blended with
+      // recency, stored importance, and usage reinforcement.
       const scored = rows.map((r) => {
         const semantic = queryVec && r.embedding?.length ? cosine(queryVec, r.embedding) : jaccard(query, r.content);
         const kw = keywordScore(query, r.content);
@@ -261,9 +268,9 @@ export function createMemoryService({ repos, gateway }) {
       return results;
     },
 
-    
-    
-    
+    // Context block injected into chats/agent prompts — the recall path.
+    // Contextual: when a conversation is supplied, the query is broadened with
+    // the user's recent messages so pronouns and follow-ups still retrieve.
     async contextBlock(userId, { projectId = null, agentId = null, query = null, conversationId = null, limit = 10 } = {}) {
       let effectiveQuery = query || '';
       if (conversationId) {
@@ -289,8 +296,8 @@ export function createMemoryService({ repos, gateway }) {
       return `Relevant memories about this user and their work (recall — may be partial):\n${lines.join('\n')}`;
     },
 
-    
-    
+    // Consolidation pass — merge, strengthen, expire. Runs after conversations
+    // (queued) and on demand from the Memory view.
     async consolidate(userId) {
       const rows = repos.memory.listForSearch(userId);
       const vectors = await embedTexts(userId, rows.map((r) => r.content));
@@ -307,7 +314,7 @@ export function createMemoryService({ repos, gateway }) {
           if (b.status !== 'active' || b.kind !== a.kind) continue;
           const sim = similarity(vectors?.[i], b.embedding, a.content, b.content);
           if (sim >= (vectors ? 0.93 : 0.85)) {
-            
+            // Keep the richer/newer trace; supersede the other.
             const keep = (b.content.length > a.content.length ? 1 : 0) + (b.updatedAt > a.updatedAt ? 0.5 : 0);
             const [winner, loser] = keep >= 0.75 ? [b, a] : [a, b];
             repos.memory.updateFields(userId, loser.id, { supersededBy: winner.id, status: 'superseded' });
@@ -325,14 +332,14 @@ export function createMemoryService({ repos, gateway }) {
           pruned++;
           continue;
         }
-        
+        // Ebbinghaus-style pruning: weak + untouched for a month fades out.
         const lastTouch = Math.max(r.updatedAt || 0, r.lastAccessedAt || 0);
         if ((r.importance ?? 0.5) < 0.28 && nowTs - lastTouch > 30 * 86_400_000) {
           repos.memory.updateFields(userId, r.id, { status: 'expired' });
           pruned++;
           continue;
         }
-        
+        // Reinforcement: memories that keep proving useful become stronger.
         if ((r.accessCount || 0) >= 3 && (r.importance ?? 0) < 0.95) {
           repos.memory.updateFields(userId, r.id, { importance: Math.min(1, (r.importance ?? 0.5) + 0.03) });
           strengthened++;
@@ -344,9 +351,9 @@ export function createMemoryService({ repos, gateway }) {
       return result;
     },
 
-    
-    
-    
+    // Background extraction: turn a finished conversation into durable,
+    // typed, importance-scored memories (not blindly — every candidate passes
+    // the selective pipeline).
     async extractFromConversation({ userId, conversationId, modelRowId }) {
       const messages = repos.chat.listMessages(conversationId, { limit: 60 });
       const usable = messages.filter((m) => ['user', 'assistant'].includes(m.role) && m.content?.trim());

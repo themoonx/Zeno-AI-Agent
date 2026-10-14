@@ -1,8 +1,8 @@
-
-
-
-
-
+// Settings → Intelligence (Jev decision layer, model routing, verification,
+// research workflow) and Settings → Cost & Usage (budgets + spend).
+//
+// The chat surface stays minimal by design (harness spec §1/§25): everything
+// that configures the machine lives here, never on the Home screen.
 import { h, toast } from '../ui.js';
 import { icon } from '../icons.js';
 import { store } from '../state.js';
@@ -24,7 +24,7 @@ function money(n) {
   return v >= 1 ? `$${v.toFixed(2)}` : `$${v.toFixed(4)}`;
 }
 
-
+// ── Intelligence ─────────────────────────────────────────────────────────────
 export function intelligencePanel(host) {
   let destroyed = false;
   const { settings } = store.state;
@@ -42,7 +42,7 @@ export function intelligencePanel(host) {
     }
   }
 
-  
+  // ── request routing (Jev) ────────────────────────────────────────────────
   const jevEnabled = h('input', { type: 'checkbox', checked: jev.enabled !== false });
   jevEnabled.addEventListener('change', () => patch('jev', { enabled: jevEnabled.checked }));
 
@@ -65,7 +65,7 @@ export function intelligencePanel(host) {
   for (const el of [modeSelect, endpointInput, modelInput]) el.addEventListener('change', remoteSave);
   keyInput.addEventListener('change', () => { remoteSave(); keyInput.value = ''; });
 
-  
+  // ── model routing ────────────────────────────────────────────────────────
   const routingMode = h('select', { class: 'select' },
     h('option', { value: 'off', selected: routing.mode === 'off', text: 'Off — always use the conversation model' }),
     h('option', { value: 'aux', selected: (routing.mode || 'aux') === 'aux', text: 'Auxiliary only — route planning, summaries & verification (recommended)' }),
@@ -85,7 +85,7 @@ export function intelligencePanel(host) {
   const learning = h('input', { type: 'checkbox', checked: routing.learning !== false });
   learning.addEventListener('change', () => patch('model_routing', { learning: learning.checked }));
 
-  
+  // ── verification ─────────────────────────────────────────────────────────
   const verEnabled = h('input', { type: 'checkbox', checked: verification.enabled !== false });
   verEnabled.addEventListener('change', () => patch('verification', { enabled: verEnabled.checked }));
   const LEVELS = ['none', 'basic', 'standard', 'strict'];
@@ -94,7 +94,7 @@ export function intelligencePanel(host) {
   );
   verLevel.addEventListener('change', () => patch('verification', { minimum_level: verLevel.value }));
 
-  
+  // ── research workflow ────────────────────────────────────────────────────
   const resEnabled = h('input', { type: 'checkbox', checked: research.enabled !== false });
   resEnabled.addEventListener('change', () => patch('research', { enabled: resEnabled.checked }));
   const resSubq = h('input', { class: 'input', type: 'number', min: '1', max: '6', value: String(research.max_subqueries ?? 4), style: 'width:90px' });
@@ -102,7 +102,7 @@ export function intelligencePanel(host) {
   const resReads = h('input', { class: 'input', type: 'number', min: '0', max: '6', value: String(research.max_reads ?? 3), style: 'width:90px' });
   resReads.addEventListener('change', () => patch('research', { max_reads: Math.max(0, Math.min(6, Number(resReads.value) || 3)) }));
 
-  
+  // ── decision preview ─────────────────────────────────────────────────────
   const previewInput = h('input', { class: 'input', placeholder: 'Type a request to see how it would route…' });
   const previewOut = h('div', { class: 'decision-preview' });
   async function runPreview() {
@@ -135,7 +135,7 @@ export function intelligencePanel(host) {
   }
   previewInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') runPreview(); });
 
-  
+  // ── routing stats (learning execution policy) ────────────────────────────
   const statsHost = h('div');
   async function loadStats() {
     try {
@@ -223,7 +223,7 @@ export function intelligencePanel(host) {
   return { destroy() { destroyed = true; } };
 }
 
-
+// ── Cost & Usage ─────────────────────────────────────────────────────────────
 export function costPanel(host) {
   let destroyed = false;
   const budgets = (store.state.settings.cost_governor) || {};

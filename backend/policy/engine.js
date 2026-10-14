@@ -1,16 +1,16 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
+// Policy engine — decides Allow / Ask / Deny for every capability call.
+// Deliberately separate from the sandbox: policy decides WHETHER an action may
+// run; the execution environment decides WHAT the process could reach.
+//
+// Decision = user rules, then preset baseline:
+//
+//   pass 1  DENY scan — any matching deny rule wins immediately, before
+//           anything else is considered (deny-before-ask semantics).
+//   pass 2  most-specific matching allow/ask rule wins (longest subject).
+//   pass 3  the active preset's baseline for the action class.
+//
+// Subject shape: '<actionClass>:<resource-pattern>' (e.g. 'fs.write:C:/work/**',
+// 'net:request:api.github.com', 'mcp:<connectorId>:*', 'shell.exec:*').
 import { presetFor } from './presets.js';
 import { wildcardMatch } from './match.js';
 
@@ -54,13 +54,15 @@ export function createPolicyEngine({ repos }) {
     return wildcardMatch(pattern, String(resource));
   }
 
-  
+  /**
+   * The single decision point. Returns { decision: 'allow'|'ask'|'deny', reason }.
+   */
   async function evaluate({ userId, tool, args, mode }) {
     const actionClass = actionClassOf(tool);
     const resource = resourceOf(tool, args);
     const preset = presetFor(mode);
 
-    
+    // Read-only capabilities never gate.
     if (!tool?.sensitive) {
       return { decision: 'allow', reason: 'read-only capability' };
     }
@@ -69,22 +71,22 @@ export function createPolicyEngine({ repos }) {
     try {
       rules = repos.policy.listForDecision(userId);
     } catch {
-      
+      /* policy lookups must never break execution */
     }
 
-    
+    // Pass 1 — explicit deny beats everything (deny-before-ask).
     for (const rule of rules) {
       if (rule.effect === 'deny' && subjectMatches(rule.subject, { actionClass, resource, tool })) {
         return { decision: 'deny', reason: `deny rule "${rule.subject}"` };
       }
     }
 
-    
+    // Full Access: no further gating unless a deny matched above.
     if (preset.id === 'full') {
       return { decision: 'allow', reason: 'Full Access preset' };
     }
 
-    
+    // Pass 2 — most-specific allow/ask rule wins.
     for (const rule of rules) {
       if (rule.effect === 'deny') continue;
       if (subjectMatches(rule.subject, { actionClass, resource, tool })) {
@@ -92,7 +94,7 @@ export function createPolicyEngine({ repos }) {
       }
     }
 
-    
+    // Pass 3 — preset baseline.
     const baseline = preset.autoClasses.includes(actionClass)
       ? 'allow'
       : preset.workspaceSafeAuto && tool?.workspaceSafe

@@ -1,10 +1,10 @@
-
-
-
-
-
-
-
+// Subagents — stateless child-agent runtimes spawned by the main agent.
+// A delegation creates its own session (kind 'subagent', parent linked), its
+// own context assembly, and a restricted catalog; the child runs the SAME
+// orchestrator pipeline as chat. The parent blocks until the child finishes
+// (parallel delegation rides the executor's parallel tool calls); results
+// aggregate into the parent transcript, usage rolls up via events, and
+// cancelling the parent aborts the child.
 import { randomId } from '../core/crypto.js';
 import { logger } from '../core/logger.js';
 import { disposeSession, getDisposals } from '../kernel/lifecycle-registry.js';
@@ -12,7 +12,11 @@ import { disposeSession, getDisposals } from '../kernel/lifecycle-registry.js';
 const log = logger('subagents');
 
 export function createSubagentRunner({ repos, kernel, orchestrator, telemetry }) {
-    async function runSubagent({ userId, parentSessionId, parentRunId, task, tools, modelRowId, permissionMode, signal, maxSteps = 8 }) {
+  /**
+   * Run one child agent to completion.
+   * opts: { userId, parentSessionId, parentRunId, task, tools (schemas), modelRowId, permissionMode, signal, maxSteps = 8 }
+   */
+  async function runSubagent({ userId, parentSessionId, parentRunId, task, tools, modelRowId, permissionMode, signal, maxSteps = 8 }) {
     const session = kernel.create({
       userId,
       kind: 'subagent',
@@ -21,7 +25,7 @@ export function createSubagentRunner({ repos, kernel, orchestrator, telemetry })
       reuse: false,
     });
     kernel.append(session.id, userId, 'subagent/assigned', { subSessionId: session.id, task });
-    
+    // Register teardown BEFORE the child publishes anything live.
     getDisposals(parentSessionId)?.register(`subagent:${session.id}`, () => repos.sessions.setStatus(session.id, 'stopped'));
 
     try {
@@ -59,13 +63,14 @@ export function createSubagentRunner({ repos, kernel, orchestrator, telemetry })
   return { runSubagent };
 }
 
+/** The `delegate` capability — the model's interface to subagents. */
 export function createDelegateTool({ subagents, repos, kernel }) {
   return {
     name: 'delegate',
     displayName: 'Delegate to Subagent',
     description:
       'Spawn an independent child agent to complete a focused sub-task with its own context (research, analysis, exploration) and return its final report. Use for parallelizable or context-heavy work that would crowd the main conversation.',
-    sensitive: false, 
+    sensitive: false, // read-only child by default; the child's own calls are gated individually
     permissionClass: 'agent.delegate',
     parameters: {
       type: 'object',
@@ -85,7 +90,7 @@ export function createDelegateTool({ subagents, repos, kernel }) {
       const modelRowId = repos.users.getSetting(userId, 'default_model')?.modelId || repos.providers.listModels(userId)[0]?.id;
       if (!modelRowId) throw new Error('No model configured for subagents');
 
-      
+      // Restricted child catalog: read-only/research capabilities only.
       const childTools = (await import('../tools/registry.js')).toolSchemasFor(['web_search', 'browser_read', 'file_read', 'file_list', 'memory_search', 'skill_load']);
 
       const results = await Promise.all(

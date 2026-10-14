@@ -1,6 +1,6 @@
-
-
-
+// File-type registry: extension → icon glyph, accent color, and highlight.js
+// language. Shared by the chat activity cards and the VS Code-style preview
+// panel so every file reference renders consistently.
 
 export const FILE_TYPES = {
   js:        { icon: 'ftJs',        color: '#f1e05a', language: 'javascript', label: 'JavaScript' },
@@ -58,7 +58,7 @@ export const FILE_TYPES = {
   lock:      { icon: 'ftLock',      color: '#8b93a3', language: 'text',       label: 'Lockfile' },
 };
 
-
+// Special-case filenames whose "extension" is really their name.
 const SPECIAL_NAMES = {
   readme: 'readme',
   'readme.md': 'readme',

@@ -1,15 +1,15 @@
-
-
-
-
-
-
-
-
-
-
-
-
+// VerificationEngine — independent validation of agent output (harness spec
+// §21). Verification is a dial, not a gate on everything:
+//
+//   none     chat turns and trivial work — stay fast
+//   basic    deterministic checks only (zero cost, zero latency risk)
+//   standard one cheap grader call on a balanced-tier model
+//   strict   grader call + deterministic contradiction scan; a failed strict
+//            check lets the orchestrator regenerate once at a higher tier
+//
+// A failing checker NEVER fails the turn: it reports findings and (at strict)
+// triggers one corrective regeneration. Verification output is scrubbed
+// metadata only — no reasoning text, no answer bodies in telemetry.
 import { logger } from '../core/logger.js';
 
 const log = logger('verification');
@@ -20,7 +20,7 @@ const GRADER_SYSTEM =
   'Rules: flag claims the evidence does not support, internal contradictions, and unanswered parts of the request. Do NOT flag style. Max 5 issues. If the answer is sound, return ok:true with an empty issues array.';
 
 export function createVerificationEngine({ repos, gateway, modelRouter = null }) {
-  
+  /** Effective level for a turn, honoring the user's verification settings. */
   function levelFor(decision, userId) {
     const stored = repos.users.getSetting(userId, 'verification') || {};
     const s = typeof stored === 'object' ? stored : {};
@@ -32,7 +32,11 @@ export function createVerificationEngine({ repos, gateway, modelRouter = null })
     return fromDecision;
   }
 
-  
+  /**
+   * Verify one drafted answer. Returns
+   *   { level, ok, issues, confidence, checker, skipped?, revised? }
+   * and never throws — checker outages degrade to a pass with `skipped`.
+   */
   async function verify({ userId, decision = null, level, query, answer, evidenceDigest = null, modelRowId, signal, onUsage }) {
     const issues = [];
     let checker = 'deterministic';
@@ -40,7 +44,7 @@ export function createVerificationEngine({ repos, gateway, modelRouter = null })
 
     if (level === 'none') return { level, ok: true, issues, confidence: 1, checker };
 
-    
+    // ── basic: deterministic, free, immediate ───────────────────────────────
     const text = String(answer || '');
     if (!text.trim()) issues.push({ claim: '(answer)', problem: 'The agent produced an empty answer after completing tool work.' });
     else if (text.trim().length < 60 && decision?.complexity === 'complex') {

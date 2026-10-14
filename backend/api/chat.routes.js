@@ -1,15 +1,15 @@
-
-
-
-
-
-
-
-
-
-
-
-
+// Streaming chat endpoint. POST /api/chat/stream
+// Body: { conversationId, content?, attachmentIds?, modelRowId?, mode? }
+//       mode: 'send' | 'regenerate' | 'edit' (+ editMessageId)
+//
+// The session event log is the source of truth: the route ensures a session
+// for the conversation, appends `user/message` (the model-facing content,
+// after file-context injection), and hands the turn to the orchestrator —
+// which RECONSTRUCTS the model transcript from the log. Message rows are a
+// write-through projection the route maintains for the UI.
+//
+// Regenerate/edit are history surgery: the superseded event range is removed
+// from the log and the projection together (an explicit user correction).
 import { Router } from 'express';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -37,14 +37,14 @@ function sseSend(res, event) {
 }
 
 export function createChatRoutes({ repos, gateway, memory, orchestrator, kernel, snapshots, enqueueMemoryExtraction }) {
-  
-  
+  // trackAbort is imported directly below — the runtime control transition is
+  // a module function, not route state.
   const router = Router();
 
-  
-  
-  
-  
+  // ── workspace undo / redo (transactional snapshots) ─────────────────────────
+  // The session's event log holds every pre-mutation checkpoint, so undo/redo
+  // survive restarts. Actions append to the kernel AND write a snapshot
+  // message row so the thread shows what was rolled back after a reload.
   function activeSessionFor(userId, conversationId) {
     const conv = repos.chat.getConversation(userId, conversationId);
     if (!conv) throw errors.notFound('Conversation');
@@ -139,7 +139,7 @@ export function createChatRoutes({ repos, gateway, memory, orchestrator, kernel,
       return next(err);
     }
 
-    
+    // Permission mode: per-request override wins, else the stored preset.
     const permissionMode = body.permissionMode || storedPermissionMode(repos, req.auth.userId);
     const planMode = body.plan ?? planModeEnabled(repos, req.auth.userId);
 
@@ -161,10 +161,10 @@ export function createChatRoutes({ repos, gateway, memory, orchestrator, kernel,
     const clientAborted = new Promise((resolve) => res.on('close', resolve));
 
     try {
-      
+      // ── session: one active session per conversation ────────────────────
       const session = kernel.create({ userId: req.auth.userId, kind: 'chat', conversationId: conversation.id });
 
-      
+      // ── history surgery (regenerate/edit): truncate event log + rows ────
       if (mode === 'regenerate') {
         const messages = repos.chat.listMessages(conversation.id);
         const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant' && (!m.attachments || Array.isArray(m.attachments) || m.attachments?.kind !== 'tool_step'));
@@ -179,14 +179,14 @@ export function createChatRoutes({ repos, gateway, memory, orchestrator, kernel,
         truncateSessionEvents(repos, session.id, { messageId: target.id });
       }
 
-      
+      // ── user message: append to the kernel, write through to the row ────
       let finalContent = '';
       if (mode !== 'regenerate') {
         const content = String(body.content || '').trim();
         if (!content && !(body.attachmentIds || []).length) throw errors.badRequest('Message is empty');
 
-        
-        
+        // Attachments: images become vision inputs; text/pdf extracts are
+        // inlined into the prompt as reference blocks.
         const images = [];
         let fileContext = '';
         const attachmentRefs = [];
@@ -226,7 +226,7 @@ export function createChatRoutes({ repos, gateway, memory, orchestrator, kernel,
         }
         const row = repos.chat.getMessage(msgId);
 
-        
+        // Kernel: the model-facing content (post-injection) is what replays.
         const userEvent = kernel.append(session.id, req.auth.userId, 'user/message', {
           content: finalContent,
           messageId: msgId,
@@ -234,13 +234,13 @@ export function createChatRoutes({ repos, gateway, memory, orchestrator, kernel,
           displayAttachments: attachmentRefs.length ? attachmentRefs : null,
           messageRow: row,
         });
-        
-        
+        // The route owns this SSE: map the persisted event to the chat frame so
+        // the client can swap its optimistic message for the persisted row.
         const userFrame = toChatFrame(userEvent);
         if (userFrame) sseSend(res, userFrame);
       }
 
-      
+      // Auto-title from the first exchange.
       if (conversation.title === 'New conversation' && mode !== 'regenerate') {
         const first = body.content || 'File conversation';
         repos.chat.updateConversation(req.auth.userId, conversation.id, {
@@ -248,7 +248,7 @@ export function createChatRoutes({ repos, gateway, memory, orchestrator, kernel,
         });
       }
 
-      
+      // ── the turn: orchestrator reconstructs the transcript from the log ──
       const abortController = new AbortController();
       clientAborted.then(() => abortController.abort());
       const untrack = trackAbort(session.id, abortController);
@@ -283,8 +283,8 @@ export function createChatRoutes({ repos, gateway, memory, orchestrator, kernel,
           permissionMode,
           planMode,
           scopeKey: conversation.id,
-          
-          
+          // The orchestrator emits kernel events and hands back ready-made
+          // chat frames — this route only forwards them.
           onEvent: (frame) => sseSend(res, frame),
           persistStep: ({ role, content, reasoning, attachments, displayName }) => {
             repos.chat.insertMessage({
@@ -360,8 +360,8 @@ export function createChatRoutes({ repos, gateway, memory, orchestrator, kernel,
       });
       res.end();
 
-      
-      
+      // After a clean first exchange, queue background memory extraction
+      // (durable job; skipped automatically when no default model is set).
       if (!turnError && status === 'complete' && mode === 'send' && enqueueMemoryExtraction) {
         const extractionSetting = repos.users.getSetting(req.auth.userId, 'auto_memory');
         const enabled = extractionSetting === null ? true : !!extractionSetting;
@@ -383,7 +383,7 @@ export function createChatRoutes({ repos, gateway, memory, orchestrator, kernel,
   return router;
 }
 
-
+/** Remove superseded events from the log so reconstruction matches the surgery. */
 function truncateSessionEvents(repos, sessionId, { type, messageId }) {
   const events = repos.sessions.listEvents(sessionId);
   let upto = -1;

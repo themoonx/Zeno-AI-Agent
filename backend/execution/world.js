@@ -1,18 +1,18 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+// ExecutionWorld — THE replaceable seam between capabilities and the
+// environments they execute in. Service Definition → Provider → Consumer:
+//
+//   definition  — the world interface below (fs, shell)
+//   providers   — WorkspaceWorld · LocalAgentWorld (swap-in)
+//   consumers   — tools/capabilities resolve a world and delegate; a provider
+//                 swap relocates execution without touching the Agent Loop
+//
+// Policy decides allow/ask/deny BEFORE a world is invoked (capabilities/
+// executor.js); the world decides what the operation can physically reach.
+// Providers compose real implementations rather than duplicating them:
+// WorkspaceWorld delegates its fs to the file-tools ops and its shell to
+// execution/shell.js; LocalAgentWorld relays to the paired daemon (with the
+// server-side bridge as fallback). Future environments (SSH, cloud) are one
+// new provider registered here.
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { config } from '../core/config.js';
@@ -31,13 +31,13 @@ import {
 
 const log = logger('world');
 
+// ── providers ────────────────────────────────────────────────────────────────
 
-
-
+/** WorkspaceWorld — the per-user private directory + restricted exec backends. */
 function createWorkspaceWorld({ userId }) {
   const root = workspaceDirFor(userId);
-  
-  
+  // The world view over the workspace file tools: identical results, relative
+  // paths, one implementation behind both the tools and this provider.
   return {
     id: `workspace:${userId}`,
     kind: 'workspace',
@@ -71,7 +71,7 @@ function createWorkspaceWorld({ userId }) {
   };
 }
 
-
+/** LocalAgentWorld — the user's paired daemon (or the server-side bridge fallback). */
 function createLocalAgentWorld({ userId }) {
   const registry = getAgentRegistry();
   const viaDaemon = async (op, params) => {
@@ -169,8 +169,8 @@ function createLocalAgentWorld({ userId }) {
         return { ok: true, path: target, deleted: true };
       },
     },
-    
-    
+    // Shell on the user's machine relays to the daemon (which gates it behind
+    // its own --allow-shell flag and authorized roots).
     shell: {
       exec(command) {
         return (async () => {
@@ -195,10 +195,10 @@ function norm(p) {
   return process.platform === 'win32' ? r.toLowerCase() : r;
 }
 
-
+// ── registry ─────────────────────────────────────────────────────────────────
 
 export function createWorldRegistry() {
-  const providers = new Map(); 
+  const providers = new Map(); // kind → factory({userId})
 
   function registerProvider(kind, factory) {
     providers.set(kind, factory);
@@ -207,7 +207,11 @@ export function createWorldRegistry() {
   registerProvider('workspace', ({ userId }) => createWorkspaceWorld({ userId }));
   registerProvider('local-agent', ({ userId }) => createLocalAgentWorld({ userId }));
 
-  
+  /**
+   * Resolve a world for a consumer. kind: 'workspace' (default) or
+   * 'local-agent'. Throws when the kind is unknown or the world is not
+   * currently available (e.g. no paired daemon and no bridge).
+   */
   function resolve(kind, { userId }) {
     const factory = providers.get(kind);
     if (!factory) throw new Error(`Unknown execution world: ${kind}`);

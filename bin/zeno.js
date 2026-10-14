@@ -1,14 +1,14 @@
 #!/usr/bin/env node
-
-
-
-
-
-
-
-
-
-
+// Zeno CLI — headless client for the Zeno Agent Kernel. Speaks the same
+// JSON-RPC surface the web UI uses (no second agent implementation).
+//
+//   node bin/zeno.js chat "Task text"          # run a headless agent task, stream events
+//   node bin/zeno.js run "Task text"           # fire-and-forget + status
+//   node bin/zeno.js schedules                 # list scheduled tasks
+//
+// Environment:
+//   ZENO_SERVER  server base URL (default http://127.0.0.1:3000)
+//   ZENO_TOKEN   session token (from a logged-in browser session or login API)
 import process from 'node:process';
 
 const SERVER = (process.env.ZENO_SERVER || 'http://127.0.0.1:3000').replace(/\/+$/, '');

@@ -1,22 +1,22 @@
 #!/usr/bin/env node
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+// Zeno Local Agent — the daemon that runs on YOUR machine and gives the Zeno
+// server authorized access to it.
+//
+//   Zeno Web → Zeno Server → (outbound WebSocket) → this daemon → your files
+//
+// The daemon dials OUT to the server (no inbound ports opened), proves itself
+// with a pairing token created in Zeno → Settings → Environments, and only
+// exposes the capabilities you allow: filesystem operations confined to the
+// roots you list, plus optional shell/code execution.
+//
+// Usage:
+//   node local-agent/agent.js --server http://127.0.0.1:3000 --token <PAIRING_TOKEN> \
+//        --roots "C:\Users\you\Desktop;C:\Users\you\Documents" [--allow-shell] [--name my-pc]
+//
+// Security model:
+//   - paths MUST resolve inside --roots (checked on both daemon AND server);
+//   - shell/code execution is disabled unless --allow-shell is passed;
+//   - the pairing token can be revoked any time in Settings → Environments.
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -24,7 +24,7 @@ import os from 'node:os';
 import process from 'node:process';
 import { WebSocket } from 'ws';
 
-
+// ── args ─────────────────────────────────────────────────────────────────────
 function parseArgs(argv) {
   const out = {};
   for (let i = 2; i < argv.length; i++) {
@@ -69,7 +69,7 @@ console.log(`  server: ${SERVER}`);
 console.log(`  roots:  ${ROOTS.join('  ')}`);
 console.log(`  shell:  ${ALLOW_SHELL ? 'enabled (--allow-shell)' : 'disabled (fs-only)'}`);
 
-
+// ── path confinement ─────────────────────────────────────────────────────────
 function norm(p) {
   const r = path.resolve(String(p || ''));
   return process.platform === 'win32' ? r.toLowerCase() : r;
@@ -99,7 +99,7 @@ async function readText(target) {
   return { stat: st, text: buf.toString('utf8') };
 }
 
-
+// ── operations ───────────────────────────────────────────────────────────────
 async function runOp(op, params = {}) {
   switch (op) {
     case 'fs.read': {
@@ -244,7 +244,7 @@ function execChild(spawn, cmd, args, { cwd, timeoutMs }) {
   });
 }
 
-
+// ── connection ───────────────────────────────────────────────────────────────
 let backoff = 1000;
 
 function connect() {

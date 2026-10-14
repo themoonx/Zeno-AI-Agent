@@ -1,4 +1,4 @@
-
+// Inline SVG icon set (stroke-based, 24px grid, currentColor).
 const icons = {
   chat: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
   folder: '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
@@ -53,7 +53,7 @@ const icons = {
   circle: '<circle cx="12" cy="12" r="10"/>',
   loader: '<path d="M21 12a9 9 0 1 1-6.22-8.56"/>',
   mojARM: '<path d="M4 12h16"/><circle cx="8" cy="8" r="1"/><circle cx="16" cy="8" r="1"/><path d="M8 15.5s1.5 1.5 4 1.5 4-1.5 4-1.5"/>',
-  
+  // Zeno agent UI: permission, planning, files
   shieldCheck: '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1 1 0 0 1 1.52 0C14.5 3.8 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/>',
   shieldBolt: '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1 1 0 0 1 1.52 0C14.5 3.8 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m12 8 2.5 3.5L12 15l-1.5-2.5"/>',
   shieldOpen: '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1 1 0 0 1 1.52 0C14.5 3.8 17 5 19 5a1 1 0 0 1 1 1z"/><path d="M8.5 11.5 12 15l4-6"/>',
@@ -64,7 +64,7 @@ const icons = {
   chevronsDown: '<path d="m7 6 5 5 5-5m-10 7 5 5 5-5"/>',
   history: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>',
   layers: '<path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/>',
-  
+  // File-type glyphs (filled, colorful VS Code style)
   ftFile: '<path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z" fill="currentColor" stroke="none" opacity="0.92"/><path d="M14 2v5h5" fill="currentColor" stroke="none" opacity="0.6"/>',
   ftJs: '<path d="M3 3h18v18H3z" fill="none"/><path d="M6.8 18.6c.7 1.1 1.9 1.9 3.6 1.9 2 0 3.3-1.1 3.3-2.7 0-1.6-1.1-2.4-2.9-3.2l-.6-.3c-1-.4-1.4-.8-1.4-1.4 0-.6.5-1 1.2-1 .7 0 1.2.3 1.6 1l1.7-1.1c-.7-1.2-1.8-1.7-3.3-1.7-2 0-3.3 1.3-3.3 3 0 1.6 1 2.4 2.6 3.1l.6.3c1.1.4 1.6.9 1.6 1.6 0 .6-.5 1.1-1.4 1.1-.9 0-1.6-.5-2-1.2z" fill="currentColor" stroke="none"/><path d="M17.5 17.5c.5.9 1.2 1.5 2.4 1.5 1 0 1.6-.5 1.6-1.2 0-.8-.7-1.1-1.8-1.6l-.6-.3c-1.5-.6-2.4-1.4-2.4-3 0-1.5 1.1-2.6 2.9-2.6 1.3 0 2.2.4 2.8 1.6l-1.5 1c-.3-.6-.7-.8-1.3-.8s-1 .4-1 .8c0 .6.3.9 1.2 1.3l.6.3c1.8.7 2.7 1.5 2.7 3.2 0 1.8-1.4 2.8-3.3 2.8-1.8 0-3-.9-3.6-2z" fill="currentColor" stroke="none" opacity="0.85"/>',
   ftTs: '<rect x="3" y="3" width="18" height="18" rx="2.5" fill="currentColor" stroke="none" opacity="0.95"/><path d="M7 11.2h2.1V17h1.4v-5.8h2.1V10H7zM14.4 16.9c.4.6 1 1.1 2 1.1 1.2 0 2-.6 2-1.7 0-.9-.6-1.4-1.6-1.8l-.4-.2c-.6-.2-.9-.4-.9-.8 0-.4.3-.6.8-.6.5 0 .9.2 1.2.7l1-.7c-.4-.7-1.1-1.1-2.1-1.1-1.3 0-2.1.8-2.1 1.8 0 .9.6 1.4 1.6 1.8l.4.2c.7.3 1 .5 1 .9 0 .4-.3.6-.9.6-.5 0-1-.3-1.3-.8z" fill="#fff" stroke="none"/>',
@@ -100,8 +100,8 @@ export function icon(name, cls = '') {
   return `<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
 }
 
-
-
+// The official Zeno mark: two angular strokes, drawn from the brand SVG.
+// Uses currentColor so it sits naturally in any surface, on either theme.
 export const zenoMark = (size = 30) => `
 <svg viewBox="0 0 100 100" width="${size}" height="${size}" aria-hidden="true" fill="currentColor">
   <path d="M35 20H80V35L67.5 47.5H46.287L58.787 35H20Z"/>

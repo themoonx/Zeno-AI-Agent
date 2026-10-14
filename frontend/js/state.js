@@ -1,5 +1,5 @@
-
-
+// Central state store with tiny pub/sub. Views subscribe to the slices they
+// render; mutations flow through state actions so the UI stays consistent.
 
 function createStore() {
   const state = {
@@ -17,21 +17,21 @@ function createStore() {
     settings: {},
     sandboxMode: 'unknown',
 
-    
+    // Chat session
     currentConversationId: null,
-    currentModelId: null, 
+    currentModelId: null, // model row id used by composer
     streaming: false,
-    attachments: [], 
+    attachments: [], // [{id, name, kind, mime}]
 
-    
-    permissionMode: 'ask', 
-    planMode: false, 
+    // Agent control surface
+    permissionMode: 'ask', // ask | workspace | full — enforced server-side
+    planMode: false, // Plan Before Editing toggle
 
-    
+    // Approvals needing attention
     pendingApprovals: [],
   };
 
-  const listeners = new Map(); 
+  const listeners = new Map(); // key -> Set<fn>
 
   function emit(key) {
     const set = listeners.get(key);
@@ -60,7 +60,7 @@ function createStore() {
 
 export const store = createStore();
 
-
+// ── selectors ────────────────────────────────────────────────────────────────
 export function currentConversation() {
   return store.state.conversations.find((c) => c.id === store.state.currentConversationId) || null;
 }

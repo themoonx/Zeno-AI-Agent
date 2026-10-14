@@ -1,5 +1,5 @@
-
-
+// Composer: auto-growing textarea, attachments, model chip, permission-mode
+// selector, Plan Mode toggle, send/stop.
 import { h, toast, openDropdown } from '../ui.js';
 import { icon } from '../icons.js';
 import { store, currentConversation, currentModel, defaultModel } from '../state.js';
@@ -64,7 +64,7 @@ export function createComposer({ onSend, onStop, onAttach }) {
     updateSendState();
   }
 
-  
+  // ── Permission mode selector ───────────────────────────────────────────────
   const permDot = h('span', { class: 'perm-dot' });
   const permLabel = h('span', { class: 'label', text: 'Ask Before Change' });
   const permBtn = h(
@@ -112,7 +112,7 @@ export function createComposer({ onSend, onStop, onAttach }) {
   }
   renderPermChip();
 
-  
+  // ── Plan Mode toggle ───────────────────────────────────────────────────────
   const planBtn = h(
     'button',
     {

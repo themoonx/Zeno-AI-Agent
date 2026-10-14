@@ -6,9 +6,9 @@ import { encryptSecret, decryptSecret } from '../core/crypto.js';
 
 const MEMORY_KINDS = ['fact', 'preference', 'project', 'agent', 'summary', 'episodic', 'semantic'];
 
-
-
-
+// Settings keys owned by the intelligence layer. Each has a shape validator so
+// a bad value can never reach the runtime; `jev.api_key` is encrypted at rest
+// with the same vault as provider credentials.
 const TIERS = ['local', 'fast', 'balanced', 'reasoning', 'premium'];
 const VERIFY_LEVELS = ['none', 'basic', 'standard', 'strict'];
 
@@ -25,7 +25,7 @@ function shapeFor(key, value) {
       if (boolOf(v.enabled) !== undefined) out.enabled = v.enabled;
       if (v.endpoint !== undefined) {
         const endpoint = String(v.endpoint || '').trim();
-        if (endpoint && !/^https?:\/\
+        if (endpoint && !/^https?:\/\//.test(endpoint)) throw errors.badRequest('jev.endpoint must be an http(s) URL');
         out.endpoint = endpoint;
       }
       if (strEnum(v.mode, ['json', 'openai']) !== undefined) out.mode = v.mode;
@@ -41,7 +41,7 @@ function shapeFor(key, value) {
       }
       if (boolOf(v.llm_fallback) !== undefined) out.llm_fallback = v.llm_fallback;
       if (v.api_key !== undefined) {
-        
+        // Encrypt plaintext on the way in; keep an existing vault blob as-is.
         const k = String(v.api_key || '');
         if (!k) out.api_key = null;
         else if (k.split('.').length === 4 && k.startsWith('v1.')) out.api_key = k;
@@ -165,8 +165,8 @@ export function createMemoryRoutes({ repos, memory }) {
     }
   });
 
-  
-  
+  // Consolidation is normally automatic (queued after conversations); expose it
+  // so users can trigger a cleanup pass from the Memory view.
   router.post('/consolidate', async (req, res, next) => {
     try {
       const result = await memory.consolidate(req.auth.userId);
@@ -207,8 +207,8 @@ export function createSettingsRoutes({ repos, audit }) {
 
   router.get('/', (req, res) => {
     const settings = repos.users.getAllSettings(req.auth.userId);
-    
-    
+    // Secrets never leave the server, even in encrypted form — the UI sends a
+    // new key to overwrite, never reads the old one back.
     if (settings.jev && typeof settings.jev === 'object' && settings.jev.api_key) {
       settings.jev = { ...settings.jev, api_key: settings.jev.api_key ? '__set__' : null };
     }

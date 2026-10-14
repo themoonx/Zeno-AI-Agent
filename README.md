@@ -120,12 +120,27 @@ Zeno AI
 
 ## Quick start
 
+### Prerequisites
+
+- **Node.js**: `>= 22.5.0` (uses built-in `node:sqlite`, zero native compilation required)
+- **Docker & Docker Compose** *(optional)*: for containerized deployment with PostgreSQL and the execution sandbox
+
+### Run locally (Zero Config)
+
 ```bash
+# 1. Install dependencies
 npm install
+
+# 2. (Optional) Custom configuration
+# By default, Zeno runs with zero config using an embedded SQLite database.
+# To customize ports, secrets, or database, copy the example environment file:
+cp .env.example .env
+
+# 3. Start the server
 npm start            # → http://127.0.0.1:3000
 ```
 
-Create an account, then **Settings → Providers & models → Add provider**. Point it at OpenAI, Anthropic, Gemini, a local Ollama, or any OpenAI-compatible URL and supply your own API key. Register a model (the provider's model list can be fetched automatically), set it as default, and start chatting.
+Open `http://127.0.0.1:3000` in your browser. Create an account, then open **Settings → Providers & models → Add provider**. Point it at OpenAI, Anthropic, Gemini, a local Ollama, or any OpenAI-compatible URL and supply your own API key. Register a model (the provider's model list can be fetched automatically), set it as default, and start chatting.
 
 To give the agent new abilities, open **Settings**:
 
@@ -266,8 +281,10 @@ GET  /health
 ## Tests
 
 ```bash
-npm start                          # then, in another shell:
-node scripts/smoke.js              # boots a stub provider fixture, drives the E2E suite
+# Run all standalone test suites (150+ tests, no running server needed):
+npm run test:unit
+
+# Or run individual test suites:
 npm run test:connectors            # connector unit/integration tests (isolated DB + mock transport)
 npm run test:features              # permission modes + policy rules, Plan Mode, unified event log,
                                    # memory pipeline, local bridge, daemon pairing + relay e2e
@@ -275,7 +292,11 @@ npm run test:intelligence          # decision layer, model routing, cost governo
                                    # verification, retry policy + E2E (routing stays chat vs agent,
                                    # settings validation, remote-Jev degradation, cost/stats APIs)
 node scripts/websearch.test.js     # web_search parser fixtures (no network)
-npm run test:ui                    # real-browser UI checks (headless Chrome via CDP; needs a running server)
+
+# End-to-end and UI tests (run with server active in another shell):
+npm start                          # terminal 1
+node scripts/smoke.js              # terminal 2 (boots stub provider, drives HTTP E2E suite)
+npm run test:ui                    # terminal 2 (real-browser UI verification via CDP)
 ```
 
 The end-to-end suite drives real HTTP: auth + cross-user isolation, gateway streaming, persistence, regenerate, uploads with extraction, unified tool turns, inline approval round-trips, memory search, and live SSE. The feature suite proves the new agent controls end-to-end: each permission mode actually gates terminal/file execution, the Plan Mode flow (plan → approval → execution → persisted plan), the memory pipeline (reinforce/supersede/score/consolidate), and the local bridge (root enforcement + CRUD). The intelligence suite proves the decision layer and its guarantees: simple requests stay simple, research/code requests go agentic, tier selection is cost-aware, budgets downgrade or block, independent tool calls genuinely overlap while sensitive ones serialize, verification levels apply by risk, and a configured-but-failing remote Jev provider degrades to the deterministic classifier without breaking a turn. The UI suite drives a real browser: skip-link behavior, sidebar geometry, Settings tabs (including Intelligence and Cost & Usage), the capability surface, mobile drawer layout — plus the agent surface: the permission chip (switch + persistence), Plan Mode card with inline approval, tool activity cards, verification cards, and the VS Code-style file preview.

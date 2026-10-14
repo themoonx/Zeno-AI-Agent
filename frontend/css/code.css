@@ -1,6 +1,8 @@
+/* ── Prose & code: markdown typography, code editors, syntax theme ──────── */
 
-
-
+/* Syntax palette as variables: dark editors everywhere by default; the file
+   preview swaps to light values in the light theme by re-declaring them on
+   its own scope. */
 :root {
   --syn-bg: #0f0d16;
   --syn-head: #141120;
@@ -38,7 +40,7 @@
   --syn-del: #dc2648;
 }
 
-
+/* ── Markdown prose ───────────────────────────────────────────────────────── */
 .markdown {
   max-width: 100%;
   font-size: var(--fs-lg);
@@ -80,7 +82,7 @@
 .markdown th { background: var(--panel-2); font-weight: 640; }
 .markdown img { border-radius: var(--r-md); max-height: 420px; }
 
-
+/* ── Code blocks: a quiet editor card ─────────────────────────────────────── */
 .markdown pre {
   background: var(--syn-bg);
   border: 1px solid var(--line);
@@ -108,7 +110,7 @@
 .code-head .icon-btn:hover { color: var(--syn-text); background: rgba(255, 255, 255, 0.06); }
 :root[data-theme='light'] .code-head .icon-btn:hover { background: rgba(28, 22, 48, 0.06); }
 
-
+/* ── highlight.js token classes (one theme, two scopes) ───────────────────── */
 .hljs-comment, .hljs-quote { color: var(--syn-comment); font-style: italic; }
 .hljs-keyword, .hljs-selector-tag, .hljs-literal, .hljs-section, .hljs-doctag, .hljs-name { color: var(--syn-keyword); }
 .hljs-built_in, .hljs-builtin-name, .hljs-class .hljs-title, .hljs-type,

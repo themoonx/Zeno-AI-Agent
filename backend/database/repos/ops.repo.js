@@ -67,7 +67,7 @@ export function createOpsRepo(db) {
         .map((r) => ({ seq: Number(r.seq), action: r.action, target: r.target, meta: pj(r.meta), ts: r.ts }));
     },
 
-    
+    // ── telemetry (observability) ─────────────────────────────────────────
     recordTelemetry({ id, userId, sessionId, runId, turnId, callId, kind, fields }) {
       db.run(
         'INSERT INTO telemetry (id, user_id, session_id, run_id, turn_id, call_id, kind, fields, ts) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
@@ -92,7 +92,7 @@ export function createOpsRepo(db) {
       };
     },
 
-    
+    // ── durable job queue ──────────────────────────────────────────────────
     enqueue({ type, payload, userId, runAfter = 0, maxAttempts = 3 }) {
       const t = now();
       const res = db.run(
@@ -101,7 +101,7 @@ export function createOpsRepo(db) {
       );
       return Number(res.lastInsertRowid);
     },
-    
+    // Atomic claim: update-to-lock pattern works on both dialects.
     claimNext(workerId, types) {
       const placeholders = types.map(() => '?').join(',');
       const sql =
@@ -138,7 +138,7 @@ export function createOpsRepo(db) {
         ]);
       }
     },
-    
+    // Requeue jobs stuck in `running` (worker crash recovery on boot).
     requeueStale(staleMs = 10 * 60_000) {
       db.run('UPDATE jobs SET status = ?, updated_at = ? WHERE status = ? AND locked_at < ?', [
         'queued',

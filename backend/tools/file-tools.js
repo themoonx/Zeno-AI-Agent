@@ -1,14 +1,14 @@
-
-
-
-
-
-
+// File tools: read/list/write/edit/delete inside the user's private workspace
+// directory (data/workspaces/<userId>). All paths are sandboxed; traversal
+// attempts are rejected. Mutating tools are marked `workspaceSafe` so they run
+// without per-change approval under the Workspace Edit permission mode, while
+// still pausing for approval in Ask Before Change mode. Results include enough
+// content for the chat file-preview panel to render what changed.
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { config } from '../core/config.js';
 
-const PREVIEW_CHARS = 16_000; 
+const PREVIEW_CHARS = 16_000; // inline preview payload cap for the chat UI
 
 export function workspaceDirFor(userId) {
   return path.join(config.workspacesDir, userId);

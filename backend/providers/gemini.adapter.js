@@ -1,4 +1,4 @@
-
+// Google Gemini adapter (generateContent, SSE streaming via alt=sse).
 import { upstreamFromResponse } from '../core/errors.js';
 
 function toGeminiContents(messages) {
@@ -79,7 +79,7 @@ async function chatStream(ctx) {
     baseUrl.replace(/\/+$/, '') +
     `/v1beta/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse`;
 
-  
+  // Key travels in the header, never the URL — URLs land in error messages.
   const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey || '', ...(headers || {}) },
@@ -155,7 +155,7 @@ async function listModels({ baseUrl, apiKey, headers, signal }) {
   const data = await response.json();
   return (data?.models || [])
     .filter((m) => (m.supportedGenerationMethods || []).includes('generateContent'))
-    .map((m) => ({ id: (m.name || '').replace(/^models\
+    .map((m) => ({ id: (m.name || '').replace(/^models\//, ''), name: m.displayName || m.name }))
     .filter((m) => !!m.id)
     .sort((a, b) => a.id.localeCompare(b.id));
 }

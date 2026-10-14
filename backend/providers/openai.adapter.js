@@ -1,12 +1,12 @@
-
-
-
-
-
-
-
-
-
+// OpenAI-compatible adapter. Covers OpenAI itself plus every /v1-compatible
+// server: OpenRouter, Groq, DeepSeek, Together, Fireworks, Mistral, xAI,
+// vLLM, LM Studio, and Zeno "custom" providers.
+//
+// Normalized streaming contract (see base.adapter.js):
+//   onDelta({ type: 'text'|'reasoning', text })
+//   onToolCall({ id, name, arguments: object })   // emitted once, complete
+//   onUsage({ promptTokens, completionTokens })
+//   then resolves with { finishReason }
 import { upstreamFromResponse } from '../core/errors.js';
 
 function buildHeaders(apiKey, extraHeaders) {
@@ -31,7 +31,7 @@ function messagesToOpenAI(messages) {
         })),
       };
     }
-    
+    // user/assistant/system with optional image attachments
     if (m.images?.length && m.role === 'user') {
       return {
         role: m.role,
@@ -109,7 +109,7 @@ async function chatStream(ctx) {
     throw upstreamFromResponse(model, response.status, text || response.statusText);
   }
 
-  
+  // Tool-call fragments arrive split across deltas; accumulate per index.
   const pendingTools = new Map();
   let finishReason = null;
   let usage = null;
@@ -154,7 +154,7 @@ async function chatStream(ctx) {
     signal
   );
 
-  
+  // Flush accumulated tool calls once the stream ends.
   for (const [, acc] of pendingTools) {
     if (!acc.name) continue;
     let args = {};
@@ -170,7 +170,7 @@ async function chatStream(ctx) {
 }
 
 function sanitizeParams(params = {}) {
-  
+  // Only pass through recognized sampling params; drop UI-only fields.
   const allowed = ['temperature', 'top_p', 'max_tokens', 'presence_penalty', 'frequency_penalty', 'seed', 'stop'];
   const out = {};
   for (const k of allowed) {

@@ -1,6 +1,6 @@
-
-
-
+// Markdown pipeline: marked → DOMPurify → code highlight + copy buttons.
+// All provider output is treated as untrusted; DOMPurify sanitizes before any
+// HTML reaches the DOM.
 import { marked } from '../vendor/marked.esm.js';
 import DOMPurify from '../vendor/purify.es.mjs';
 import hljs from '../vendor/hljs-es/core.js';
@@ -69,7 +69,7 @@ export function renderMarkdown(text, { highlight = true } = {}) {
   const tpl = document.createElement('template');
   tpl.innerHTML = clean;
 
-  
+  // Upgrade code blocks with headers + highlighting + copy.
   tpl.content.querySelectorAll('pre > code').forEach((code) => {
     const pre = code.parentElement;
     let lang = null;
@@ -82,7 +82,7 @@ export function renderMarkdown(text, { highlight = true } = {}) {
     if (highlight && lang && hljs.getLanguage(lang)) {
       try {
         hljs.highlightElement(code);
-      } catch {  }
+      } catch { /* leave plain */ }
     }
     const head = h(
       'div',
@@ -109,7 +109,7 @@ export function renderMarkdown(text, { highlight = true } = {}) {
     pre.prepend(head);
   });
 
-  
+  // Open links in new tabs safely.
   tpl.content.querySelectorAll('a[href]').forEach((a) => {
     a.setAttribute('target', '_blank');
     a.setAttribute('rel', 'noopener noreferrer');
@@ -122,6 +122,6 @@ export function markdownEl(text, opts) {
   return h('div', { class: 'markdown' }, renderMarkdown(text, opts));
 }
 
-
-
+// Exposed for the file preview panel — the registerLanguage calls above ran on
+// this shared instance, so importing hljs here gets the full language set.
 export { hljs };

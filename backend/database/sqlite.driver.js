@@ -1,5 +1,5 @@
-
-
+// SQLite driver (node:sqlite). Same contract as postgres.driver.js.
+// Placeholders are written as `?` everywhere; the pg driver translates them.
 import { DatabaseSync } from 'node:sqlite';
 import fs from 'node:fs';
 import path from 'node:path';

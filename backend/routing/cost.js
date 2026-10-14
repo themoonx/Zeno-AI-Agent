@@ -1,31 +1,31 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+// CostGovernor — cost visibility + budget enforcement (harness spec §13).
+//
+// Two independent concerns:
+//
+//  TRACKING (always on): every model call lands in the `usage_ledger` with an
+//  ESTIMATED USD cost derived from per-model pricing. Pricing resolution:
+//    1. user-set pricing on the model row (model.params.pricing, editable in
+//       Settings → Providers) — the source of truth when present
+//    2. a built-in approximate price table for well-known model ids
+//    3. provider-kind defaults (local providers cost $0)
+//  Estimates are estimates: they are labeled as such everywhere they surface.
+//
+//  ENFORCEMENT (opt-in budgets): per-request / per-day / per-month USD caps.
+//  Default configuration has NO caps (the app works out of the box, spec §33);
+//  when a cap is set the governor either DOWNGRADES the call to a cheaper
+//  tier (default) or BLOCKS it, per `cost_governor.action`.
+//
+// The governor NEVER breaks a turn on its own internal errors — budget
+// accounting failures degrade to "allowed" so tracking problems cannot take
+// the product down.
 import { randomId } from '../core/crypto.js';
 import { logger } from '../core/logger.js';
 
 const log = logger('cost');
 
-
-
-
+// Approximate list prices (USD per million tokens, in/out) for well-known
+// model ids, used ONLY when the user has not set pricing on the model row.
+// Keep coarse — this is an estimation aid, not a billing system.
 const BUILTIN_PRICING = [
   [/gpt-4o-mini/i, { in: 0.15, out: 0.6 }],
   [/gpt-4o/i, { in: 2.5, out: 10 }],
@@ -52,7 +52,7 @@ const BUILTIN_PRICING = [
 
 const ZERO = { in: 0, out: 0 };
 
-
+/** Resolve {in, out} USD per MTok for a model row. Exported for tests/UI. */
 export function priceFor(modelRow, providerKind = null) {
   const p = modelRow?.params?.pricing;
   if (p && Number.isFinite(Number(p.inputPerMTok)) && Number.isFinite(Number(p.outputPerMTok))) {
@@ -73,9 +73,9 @@ export function estimateCost(modelRow, { promptTokens = 0, completionTokens = 0 
 }
 
 export function createCostGovernor({ repos }) {
-  
-  
-  const dayCache = new Map(); 
+  // Per-user day-spend cache; invalidated on record. Prevents the ledger from
+  // being queried on every model call of a busy turn.
+  const dayCache = new Map(); // userId -> { day, spend, requests }
 
   function settingsFor(userId) {
     const stored = repos.users.getSetting(userId, 'cost_governor') || {};
@@ -100,7 +100,12 @@ export function createCostGovernor({ repos }) {
     return value;
   }
 
-  
+  /**
+   * Gate one planned model call. Resolves:
+   *   { allowed: true }                        — proceed
+   *   { allowed: true, downgrade: true, ... }   — caller picks a cheaper tier
+   *   { allowed: false, reason }                — block (action: 'block')
+   */
   function authorize({ userId, modelRow, purpose, promptTokens = 0, completionTokens = 0, repos_context = null }) {
     try {
       const cfg = settingsFor(userId);
@@ -135,11 +140,11 @@ export function createCostGovernor({ repos }) {
     if (cfg.action === 'block') {
       return { allowed: false, reason: why, estimate: est };
     }
-    
+    // Downgrade: prefer a cheaper-tier model via the router.
     return { allowed: true, downgrade: true, reason: why, estimate: est };
   }
 
-  
+  /** Record one completed model call. Never throws. */
   function record({ userId, sessionId = null, runId = null, turnId = null, modelRow, purpose = 'turn', promptTokens = 0, completionTokens = 0, providerKind = null }) {
     try {
       if (!modelRow || (!promptTokens && !completionTokens)) return;
@@ -177,7 +182,7 @@ export function createCostGovernor({ repos }) {
     }
   }
 
-  
+  /** Settings → Cost & Usage summary. */
   function summary(userId) {
     const cfg = settingsFor(userId);
     let data = { today: { cost: 0, requests: 0 }, month: { cost: 0, requests: 0 }, byDay: [], byModel: [] };

@@ -1,13 +1,13 @@
-
-
-
-
-
-
-
-
-
-
+// Realtime gateway — the WebSocket endpoint paired local-agent daemons connect
+// to. Architecture: Zeno Web → Zeno Server → (this gateway) → Local Agent on
+// the user's machine. The daemon dials OUT (no inbound firewall holes), proves
+// itself with a pairing token, and then serves capability operations relayed
+// by the execution runtime. Every relayed call still passes the server-side
+// policy engine before it reaches here.
+//
+// Protocol (JSON per frame):
+//   daemon → server: {type:'auth', token} · {type:'heartbeat'} · {type:'result', id, ok, result|error}
+//   server → daemon: {type:'ready', agentId, roots} · {type:'op', id, op, params}
 import crypto from 'node:crypto';
 import { WebSocketServer } from 'ws';
 import { logger } from '../core/logger.js';
@@ -28,7 +28,7 @@ export function attachAgentGateway({ server, repos, config }) {
   });
 
   wss.on('connection', (ws) => {
-    let authed = null; 
+    let authed = null; // { userId, agentId, agent }
     let authTimer = setTimeout(() => ws.close(4001, 'auth timeout'), 10_000);
 
     const touch = () => {
@@ -65,7 +65,7 @@ export function attachAgentGateway({ server, repos, config }) {
         touch();
         return;
       }
-      
+      // Results are consumed by registry.relay's own listeners; nothing to do.
     });
 
     ws.on('close', () => {

@@ -1,7 +1,7 @@
-
-
-
-
+// All secret handling in one place:
+//  - password hashing (scrypt, per-user salt)
+//  - opaque session tokens (random, stored only as SHA-256)
+//  - AES-256-GCM encryption of provider credentials at rest
 import crypto from 'node:crypto';
 import { config } from './config.js';
 
@@ -9,11 +9,11 @@ const SCRYPT = { N: 16384, r: 8, p: 1, keylen: 64 };
 const KEY_VERSION = 'v1';
 
 function masterKey(purpose) {
-  
+  // Derive independent subkeys per purpose from the server secret.
   return crypto.hkdfSync('sha256', Buffer.from(config.secret, 'utf8'), Buffer.alloc(0), purpose, 32);
 }
 
-
+// ── Passwords ────────────────────────────────────────────────────────────────
 export function hashPassword(password) {
   const salt = crypto.randomBytes(16);
   const hash = crypto.scryptSync(password, salt, SCRYPT.keylen, { N: SCRYPT.N, r: SCRYPT.r, p: SCRYPT.p });
@@ -33,7 +33,7 @@ export function verifyPassword(password, stored) {
   }
 }
 
-
+// ── Session tokens ───────────────────────────────────────────────────────────
 export function newSessionToken() {
   return crypto.randomBytes(32).toString('base64url');
 }
@@ -41,7 +41,7 @@ export function hashToken(token) {
   return crypto.createHash('sha256').update(token).digest('hex');
 }
 
-
+// ── Credential vault (AES-256-GCM) ───────────────────────────────────────────
 export function encryptSecret(plaintext) {
   const iv = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv('aes-256-gcm', Buffer.from(masterKey('vault'), 'binary'), iv);

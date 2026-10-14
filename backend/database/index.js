@@ -1,8 +1,8 @@
-
-
-
-
-
+// Database entry point. Chooses the driver:
+//   DATABASE_URL set   → PostgreSQL (recommended for production)
+//   otherwise          → embedded SQLite under ./data/zeno.db (zero-config)
+// All repositories are dialect-agnostic; SQL uses `?` placeholders except a
+// couple of explicit upserts handled per dialect.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -77,7 +77,7 @@ async function applySchema() {
   const sql = fs.readFileSync(path.join(__dirname, file), 'utf8');
   try {
     if (db.kind === 'postgres') {
-      
+      // Split statements on semicolons (schema contains no embedded semicolons).
       const statements = sql.split(/;\s*\n/).map((s) => s.trim()).filter(Boolean);
       for (const stmt of statements) {
         await db.exec(stmt);
@@ -91,10 +91,10 @@ async function applySchema() {
   }
 }
 
-
-
-
-
+// Repair migration: early agent_events schemas pointed session_id at the AUTH
+// `sessions` table (whose key is token_hash, not id), so any database with
+// history failed on the first kernel insert ("foreign key mismatch"). Fresh
+// schemas are already correct; this rebuilds the table/constraint in place.
 async function repairAgentEventsForeignKey() {
   try {
     if (db.kind === 'postgres') {
@@ -135,8 +135,8 @@ async function repairAgentEventsForeignKey() {
   }
 }
 
-
-
+// Incremental migrations for databases created before a feature shipped.
+// Idempotent: each step checks for its column/index before altering anything.
 async function applyMigrations() {
   const steps = [
     {

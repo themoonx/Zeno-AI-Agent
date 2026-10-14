@@ -1,6 +1,6 @@
-
-
-
+// Harness API: the capability surface of the workspace. Everything the agent
+// can do — tools, skills, plugins, MCP/HTTP connectors — is visible and
+// configurable here. Custom providers remain under /api/providers.
 import { Router } from 'express';
 import { validate } from '../core/validate.js';
 import { errors } from '../core/errors.js';
@@ -9,7 +9,7 @@ import { HARNESS_DEFAULTS } from '../harness/index.js';
 export function createHarnessRoutes({ repos, harness, audit }) {
   const router = Router();
 
-  
+  // The grouped capability snapshot for the Settings UI.
   router.get('/', async (req, res, next) => {
     try {
       res.json(await harness.snapshot(req.auth.userId));
@@ -37,9 +37,9 @@ export function createHarnessRoutes({ repos, harness, audit }) {
       }
       if (body.settings.disabled_tools !== undefined) {
         if (!Array.isArray(body.settings.disabled_tools)) throw errors.badRequest('disabled_tools must be an array of tool names');
-        
-        
-        
+        // Only names that exist in the fully-enabled catalog are storable, so a
+        // tool disabled and then removed from config cannot leave a stale
+        // switch that silently hides a future tool of the same name.
         const current = harness.settings(req.auth.userId);
         const { toolCatalog } = harness;
         const { catalog } = await toolCatalog(req.auth.userId, {
@@ -61,7 +61,7 @@ export function createHarnessRoutes({ repos, harness, audit }) {
     }
   });
 
-  
+  // ── Skills ────────────────────────────────────────────────────────────────
   router.get('/skills', (req, res) => {
     res.json({ skills: harness.skills.all(req.auth.userId) });
   });
@@ -107,7 +107,7 @@ export function createHarnessRoutes({ repos, harness, audit }) {
     }
   });
 
-  
+  // Preview which skills would activate for a hypothetical request.
   router.post('/skills/match', async (req, res, next) => {
     try {
       const body = validate(req.body, { query: { type: 'string', required: true, min: 1, max: 2000 } });
@@ -122,7 +122,7 @@ export function createHarnessRoutes({ repos, harness, audit }) {
     }
   });
 
-  
+  // ── Plugins ───────────────────────────────────────────────────────────────
   router.get('/plugins', (req, res) => {
     res.json({ plugins: harness.plugins.list(req.auth.userId) });
   });

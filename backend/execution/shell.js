@@ -1,12 +1,12 @@
-
-
-
-
-
-
-
-
-
+// Shell / process execution backends — the single implementation behind the
+// ExecutionWorld seam's `shell` capability. Two backends, same interface:
+//   1. Docker sandbox (production): POST to ZENO_SANDBOX_URL where an isolated
+//      container per task executes terminal commands / code with no access to
+//      the host backend.
+//   2. Local restricted child process (default dev backend): runs inside the
+//      per-user workspace with a hard timeout, output caps, no shell
+//      interpolation, and a minimal environment. Always gated behind explicit
+//      human approval by the capability executor before it is ever reached.
 import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -27,9 +27,9 @@ function clampOutput(stdout, stderr, exitCode, truncated) {
 }
 
 async function runInDockerSandbox(payload) {
-  
-  
-  
+  // The sandbox service contract: POST /exec { task_id, cmd|code, language,
+  // workdir } → { stdout, stderr, exit_code }. The service is responsible for
+  // container isolation; Zeno never executes it in-process.
   const res = await fetch(new URL('/exec', config.sandboxUrl), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -75,7 +75,7 @@ function localExec(cmd, args, { cwd, timeoutMs, env }) {
   });
 }
 
-
+// Minimal environment for local exec — no API keys or server secrets leak.
 function baseEnv(extra = {}) {
   return {
     PATH: process.env.PATH,
@@ -89,8 +89,8 @@ function baseEnv(extra = {}) {
   };
 }
 
-
-
+// Shell-like argv tokenizer: respects single/double quotes so commands like
+// `node -e "console.log(42)"` arrive intact, without ever invoking a shell.
 export function parseCommand(input) {
   const args = [];
   let current = '';
@@ -112,12 +112,12 @@ export function parseCommand(input) {
   return args;
 }
 
-
+/** Which backend a `shell` capability resolves to right now. */
 export function sandboxMode() {
   return config.sandboxUrl ? 'docker' : 'local-restricted';
 }
 
-
+/** Run a shell command line. `cwd` defaults to nothing (sandbox picks its own). */
 export async function execCommand(command, { runId, cwd } = {}) {
   const cmdLine = String(command || '').trim();
   if (!cmdLine) throw new Error('command is required');
@@ -126,7 +126,7 @@ export async function execCommand(command, { runId, cwd } = {}) {
     return runInDockerSandbox({ task_id: runId, cmd: cmdLine, workdir: '.' });
   }
 
-  
+  // Local restricted backend: tokenize the command (no shell interpolation).
   const parts = parseCommand(cmdLine);
   if (!parts.length) throw new Error('Empty command');
   const [cmd, ...rest] = parts;
@@ -142,7 +142,7 @@ export async function execCommand(command, { runId, cwd } = {}) {
   return out;
 }
 
-
+/** Run a code snippet (python or node) and return stdout/stderr/exitCode. */
 export async function execCode(code, language = 'python', { runId, cwd } = {}) {
   const lang = language === 'node' ? 'node' : 'python';
   const body = String(code || '');

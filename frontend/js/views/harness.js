@@ -1,6 +1,6 @@
-
-
-
+// Tools & capabilities panel: the harness surface. Shows every capability the
+// agent has — built-in tools, plugin pack tools, the user's connections, skills,
+// and plugins — with per-item enable/disable and orchestration settings.
 import { h, toast, confirmDialog, openModal } from '../ui.js';
 import { icon } from '../icons.js';
 import { api } from '../api.js';
@@ -19,7 +19,11 @@ Describe the method the agent should follow, step by step.
 - Be specific about what to check and in what order.
 - State the output format you expect.`;
 
-
+/**
+ * Tools & capabilities section.
+ * @param {object} opts
+ * @param {() => void} [opts.onChange] called after a mutation so Settings can refresh counts
+ */
 export function capabilitiesSection({ onChange = null } = {}) {
   const root = h('div', { class: 'settings-panel-body' });
   let snapshot = null;
@@ -95,7 +99,7 @@ export function capabilitiesSection({ onChange = null } = {}) {
     );
   }
 
-  
+  // ── Tools ──────────────────────────────────────────────────────────────────
   function toolsPanel() {
     const panel = h('div', { class: 'settings-panel' });
     const groups = new Map();
@@ -149,7 +153,7 @@ export function capabilitiesSection({ onChange = null } = {}) {
     }
   }
 
-  
+  // ── Skills ─────────────────────────────────────────────────────────────────
   function skillsPanel() {
     const panel = h('div', { class: 'settings-panel' });
     const skills = snapshot.skills || [];
@@ -204,7 +208,7 @@ export function capabilitiesSection({ onChange = null } = {}) {
   async function setSkillEnabled(s, enabled) {
     try {
       if (s.source === 'user') await api.patch(`/harness/skills/${s.id}/enabled`, { enabled });
-      
+      // Built-ins are read-only on disk; track their state as a local override.
       const key = 'disabled_skills';
       const current = new Set((snapshot.settings[key] || []));
       if (enabled) current.delete(s.slug);
@@ -283,7 +287,7 @@ export function capabilitiesSection({ onChange = null } = {}) {
     }
   }
 
-  
+  // ── Plugins ────────────────────────────────────────────────────────────────
   function pluginsPanel() {
     const panel = h('div', { class: 'settings-panel' });
     const packs = snapshot.packs || [];
@@ -428,7 +432,7 @@ export function capabilitiesSection({ onChange = null } = {}) {
     }
   }
 
-  
+  // ── Orchestration ──────────────────────────────────────────────────────────
   function orchestrationPanel() {
     const s = snapshot.settings;
     const panel = h('div', { class: 'settings-panel' });
@@ -458,7 +462,7 @@ export function capabilitiesSection({ onChange = null } = {}) {
       )
     );
 
-    
+    // Live matcher: show what a given request would activate.
     const probe = h('input', { class: 'input', placeholder: 'Type a request to preview orchestration…' });
     const result = h('div', { class: 'probe-result' });
     let timer = null;

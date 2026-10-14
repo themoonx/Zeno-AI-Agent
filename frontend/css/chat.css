@@ -1,4 +1,7 @@
-
+/* ── Chat: thread, hero, messages, composer ────────────────────────────────
+   The conversation is the product's centerpiece: a single calm column,
+   user intent in tinted chamfered bubbles, Zeno's answers set plainly on
+   the canvas, and a floating composer that anchors the bottom. */
 
 .chat-wrap { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .chat-stack { display: flex; flex-direction: column; height: 100%; min-height: 0; }
@@ -9,7 +12,7 @@
   display: flex; flex-direction: column; gap: 30px;
 }
 
-
+/* Hero — the empty conversation, Zeno's front door */
 .chat-hero {
   flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
   text-align: center; padding: 32px 20px; gap: 10px;
@@ -23,7 +26,7 @@
   animation: heroFloat 5s ease-in-out infinite;
 }
 .chat-hero .mark svg { width: 100%; height: 100%; }
-
+/* Radial halo — the mark floats on a pool of violet light, not a hard bloom. */
 .chat-hero .mark::before {
   content: '';
   position: absolute; inset: -40px;
@@ -60,12 +63,12 @@
 .suggestion:nth-child(3) { animation: heroIn 420ms var(--ease-out) 240ms backwards; }
 .suggestion:nth-child(4) { animation: heroIn 420ms var(--ease-out) 300ms backwards; }
 
-
+/* ── Messages ─────────────────────────────────────────────────────────────── */
 .msg { display: flex; flex-direction: column; gap: 8px; animation: msgIn 320ms var(--ease-out) backwards; }
 @keyframes msgIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 .msg.user { align-items: flex-end; }
 
-
+/* Assistant header: mark avatar + model identity, set like an byline */
 .msg .msg-label {
   display: flex; align-items: center; gap: 8px;
   font-size: var(--fs-xs); font-weight: 650; color: var(--text-3);
@@ -83,7 +86,7 @@
 .msg-avatar svg { width: 12px; height: 12px; }
 .msg .msg-label > span:last-child { letter-spacing: 0.07em; }
 
-
+/* User bubble — tinted, chamfered corner echoing the Zeno mark */
 .bubble {
   max-width: 88%;
   padding: 12px 16px;
@@ -103,9 +106,9 @@
 :root[data-theme='light'] .msg.user .bubble {
   background: linear-gradient(160deg, color-mix(in srgb, var(--accent) 13%, var(--panel)), color-mix(in srgb, var(--accent) 7%, var(--panel)));
 }
-.msg.assistant .bubble { display: none; } 
+.msg.assistant .bubble { display: none; } /* assistant body renders as .markdown */
 
-
+/* Attachments */
 .msg-attachments { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; max-width: 88%; }
 .att-chip {
   display: inline-flex; align-items: center; gap: 7px;
@@ -124,7 +127,7 @@
 }
 .att-thumb:hover { transform: scale(1.03); box-shadow: var(--shadow-2); }
 
-
+/* Message actions — appear on hover, quiet */
 .msg-actions {
   display: flex; gap: 2px; align-items: center;
   opacity: 0; transition: opacity var(--fast);
@@ -136,7 +139,7 @@
 .msg-actions .icon-btn svg { width: 14px; height: 14px; }
 .msg-meta { font-size: var(--fs-xs); color: var(--text-3); padding: 0 6px; font-variant-numeric: tabular-nums; }
 
-
+/* Persisted reasoning (collapsible) */
 .reasoning { max-width: 88%; }
 .reasoning summary {
   display: inline-flex; align-items: center; gap: 7px;
@@ -155,7 +158,7 @@
   white-space: pre-wrap; max-height: 300px; overflow-y: auto;
 }
 
-
+/* Streaming cursor */
 .cursor-blink {
   display: inline-block; width: 8px; height: 16px; margin-left: 2px;
   background: var(--accent); border-radius: 2px;
@@ -165,7 +168,7 @@
 }
 @keyframes caret { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
 
-
+/* Error banner inside thread */
 .stream-error {
   display: flex; gap: 10px; align-items: flex-start;
   background: var(--red-soft); border: 1px solid var(--red-line);
@@ -178,9 +181,9 @@
   text-decoration: underline; text-underline-offset: 3px; cursor: pointer;
 }
 
-
+/* ── Composer ─────────────────────────────────────────────────────────────── */
 .composer-zone { flex: none; padding: 0 26px 16px; position: relative; }
-
+/* Soft fade so messages dissolve into the composer instead of colliding. */
 .composer-zone::before {
   content: '';
   position: absolute; left: 0; right: 0; top: -34px; height: 34px;
@@ -222,7 +225,7 @@
 .composer-bar .icon-btn svg { width: 17px; height: 17px; }
 .composer-sep { width: 1px; height: 20px; background: var(--line-strong); margin: 0 6px; flex: none; }
 
-
+/* Send / stop — the one gradient moment, held for the primary action */
 .send-btn {
   width: 37px; height: 37px; border-radius: var(--r-full);
   display: grid; place-items: center;
@@ -245,7 +248,7 @@
 }
 @keyframes stopPulse { 0%, 100% { box-shadow: 0 0 0 0 var(--red-soft); } 50% { box-shadow: 0 0 0 6px transparent; } }
 
-
+/* Composer chips — quiet controls that sit inside the card */
 .model-chip, .perm-chip, .plan-chip, .composer-tools {
   display: inline-flex; align-items: center; gap: 7px;
   height: 32px; padding: 0 11px;
@@ -277,7 +280,7 @@
 .perm-chip.tone-red .perm-dot { background: var(--red); }
 .perm-chip.tone-red { color: var(--red); }
 
-
+/* Plan chip — a toggle with presence when on */
 .plan-chip .plan-ico { display: inline-grid; place-items: center; }
 .plan-chip .plan-ico svg { width: 14px; height: 14px; }
 .plan-chip.on {
@@ -292,12 +295,12 @@
 .upload-hint { text-align: center; color: var(--text-3); font-size: var(--fs-xs); margin-top: 8px; min-height: 16px; }
 .upload-hint.error { color: var(--red); }
 
-
+/* Model picker menu */
 .model-menu { min-width: 320px; max-height: 440px; overflow-y: auto; }
 .model-menu .model-row { width: 100%; }
 .model-menu .model-row .meta { display: flex; gap: 6px; margin-top: 3px; }
 
-
+/* Scroll-to-bottom pill */
 .scroll-btn {
   position: absolute; bottom: 128px; left: 50%; transform: translateX(-50%);
   width: 34px; height: 34px; border-radius: var(--r-full);
@@ -311,10 +314,11 @@
 .scroll-btn svg { width: 16px; height: 16px; }
 .scroll-btn.hidden { opacity: 0; pointer-events: none; transform: translateX(-50%) translateY(8px); }
 
-
+/* Empty conversation: the hero owns the canvas; the fade stays out of the way */
 .chat-wrap.is-empty .composer-zone::before { display: none; }
 
-
+/* ── Narrow screens: the composer bar must always keep the send button in
+   view — chips compress, separators and labels yield. ───────────────────── */
 @media (max-width: 640px) {
   .chat-thread { padding: 24px 16px 20px; gap: 24px; }
   .chat-hero h1 { font-size: 27px; }

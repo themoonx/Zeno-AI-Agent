@@ -162,7 +162,7 @@ export function createProviderRoutes({ repos, gateway, audit, config }) {
     }
   });
 
-  
+  // ── models ────────────────────────────────────────────────────────────────
   router.post('/:id/models', (req, res, next) => {
     try {
       const provider = repos.providers.getProvider(req.auth.userId, req.params.id);

@@ -1,7 +1,7 @@
-
-
-
-
+// browser_read: fetch a page and return its readable text (and optionally
+// links). This is real HTTP retrieval — the "browser" capability that works
+// in every environment. Full visual browser automation (Playwright in the
+// sandbox) plugs into the same registry when a sandbox is configured.
 import { assertSafeUrl } from './ssrf.js';
 import { extractReadableText, extractTitle, extractLinks } from './html.js';
 

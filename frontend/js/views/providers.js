@@ -1,5 +1,5 @@
-
-
+// Providers & Models management: add built-in or fully custom providers,
+// register models with capabilities, test connections, set defaults.
 import { h, toast, confirmDialog, openModal, fmtTokens, timeAgo } from '../ui.js';
 import { icon } from '../icons.js';
 import { store } from '../state.js';
@@ -121,7 +121,7 @@ export function mountProvidersView(root, { embedded = false } = {}) {
     inner.append(h('div', { class: 'section' }, h('div', { class: 'section-head' }, h('h2', { text: 'Connected providers' })), grid));
 
     if (Object.keys(providerKinds).length === 0) {
-      
+      // kinds not loaded yet — reload silently
       loadMeta();
     }
   }
@@ -148,7 +148,7 @@ export function mountProvidersView(root, { embedded = false } = {}) {
     }
   }
 
-  
+  // ── add / edit provider ───────────────────────────────────────────────────
   function addProviderModal() {
     const kinds = Object.entries(store.state.providerKinds);
     if (!kinds.length) {
@@ -285,7 +285,7 @@ export function mountProvidersView(root, { embedded = false } = {}) {
     });
   }
 
-  
+  // ── add model ─────────────────────────────────────────────────────────────
   async function addModelModal(provider) {
     let remoteModels = [];
     const listBtn = h('button', { class: 'btn sm', html: `${icon('refresh')}<span>Fetch from provider</span>` });
@@ -386,7 +386,9 @@ export function mountProvidersView(root, { embedded = false } = {}) {
   return { destroy() { window.removeEventListener('zeno:new-provider', onNew); } };
 }
 
-
+/**
+ * Providers & models as an embeddable Settings section.
+ */
 export function providersSection() {
   const host = h('div', { class: 'settings-embed' });
   const mounted = mountProvidersView(host, { embedded: true });

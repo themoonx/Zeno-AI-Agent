@@ -1,6 +1,6 @@
-
-
-
+// Plugins repository. Rows here are USER-installed plugin packages; built-in
+// capability packs live in code (backend/harness/plugins/) and are merged in
+// the harness service at read time.
 import { j, pj, now } from '../helpers.js';
 
 function rowToPlugin(r) {

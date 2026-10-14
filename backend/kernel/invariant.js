@@ -1,14 +1,14 @@
-
-
-
-
-
-
-
-
-
-
-
+// Reconstruction invariant — the DeepSeek-style runtime guarantee:
+//
+//   the messages sent to the model must deterministically match the messages
+//   derived from the persisted session state.
+//
+// `reconstructTranscript` derives the model transcript purely from session
+// events (projectMessages). The orchestrator checks its live transcript
+// against the reconstruction at turn start (before resuming an existing
+// session) and before finalizing each assistant message. Any desync — a
+// missed event, an out-of-order write, a hand-built transcript — fails LOUDLY
+// with a ReconstructionError instead of silently drifting.
 import { projectMessages } from './projections.js';
 
 export class ReconstructionError extends Error {
@@ -20,14 +20,14 @@ export class ReconstructionError extends Error {
   }
 }
 
-
+/** Reconstruct the model-facing transcript (excluding system prompts) from the session event log. */
 export function reconstructTranscript(kernel, sessionId) {
   const events = kernel.replay(sessionId);
   return projectMessages(events);
 }
 
-
-
+// Canonical form: strip projection-only fields, normalize images (persisted
+// file references differ from in-memory base64), stable JSON.
 function canonical(messages) {
   const norm = (m) => {
     const out = { role: m.role, content: m.content ?? '' };
@@ -40,7 +40,11 @@ function canonical(messages) {
   return JSON.stringify(messages.map(norm));
 }
 
-
+/**
+ * Compare the live transcript the orchestrator built with the reconstruction
+ * from the event log. `live` must exclude system prompts. Returns a diff
+ * summary on mismatch (first divergence point).
+ */
 export function checkInvariant(sessionId, live, reconstructed) {
   const a = canonical(live);
   const b = canonical(reconstructed);

@@ -1,6 +1,6 @@
-
-
-
+// Tiny declarative request-body validator. Rules are plain objects:
+//   { name: { type: 'string', min: 1, max: 200, required: true, default: '', enum: [...],
+//             pattern: /regex/, items: {type:'string'}, fields: {...} (object type), number: true } }
 import { errors } from './errors.js';
 
 const TYPES = ['string', 'number', 'boolean', 'array', 'object'];

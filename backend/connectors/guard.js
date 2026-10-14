@@ -1,6 +1,6 @@
-
-
-
+// Deterministic guard for connector outbound requests: public Internet only.
+// Blocks non-HTTP schemes, cloud metadata, localhost variants, private/CGNAT/
+// link-local IPs. Connectors never redirect with credentials.
 import net from 'node:net';
 import dns from 'node:dns/promises';
 import { AppError } from '../core/errors.js';

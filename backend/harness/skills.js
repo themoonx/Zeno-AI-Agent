@@ -1,7 +1,7 @@
-
-
-
-
+// Skill subsystem. A skill is reusable task-specific instruction text the model
+// can adopt for a turn. Built-in skills ship as markdown files in /skills with
+// YAML-ish frontmatter, so adding one is dropping in a file — no code change.
+// User skills live in the DB and are merged with the built-ins.
 import fs from 'node:fs';
 import path from 'node:path';
 import { ROOT_DIR } from '../core/config.js';
@@ -20,7 +20,7 @@ export function slugify(value) {
     .slice(0, 64);
 }
 
-
+// Minimal frontmatter parser: `key: value` lines, comma-separated lists.
 function parseFrontmatter(raw) {
   const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(raw);
   if (!match) return { meta: {}, body: raw };
@@ -39,7 +39,7 @@ function parseFrontmatter(raw) {
 
 let builtinCache = null;
 
-
+/** Built-in skills from disk. Cached; pass {reload:true} to re-read. */
 export function builtinSkills({ reload = false } = {}) {
   if (builtinCache && !reload) return builtinCache;
   const out = [];
@@ -81,17 +81,17 @@ function publicShape(skill) {
     tools: skill.tools || [],
     enabled: !!skill.enabled,
     source: skill.source || 'user',
-    
+    // Instructions are returned so the UI can show/edit them; they are small.
     instructions: skill.instructions || '',
     createdAt: skill.createdAt || null,
     updatedAt: skill.updatedAt || null,
   };
 }
 
-
-
-
-
+// ── trigger matching ─────────────────────────────────────────────────────────
+// Deliberately simple and predictable: a skill is a candidate when any of its
+// trigger terms appears in the request. The model makes the final call — this
+// only decides which instruction packs are worth offering.
 const STOP = new Set(['the', 'and', 'for', 'with', 'this', 'that', 'from', 'into', 'your', 'you', 'are', 'was', 'not']);
 
 function tokenize(text) {
@@ -110,20 +110,20 @@ export function scoreSkill(skill, requestText) {
   for (const trigger of skill.triggers || []) {
     const t = String(trigger).toLowerCase().trim();
     if (!t) continue;
-    
+    // Multi-word triggers match as substrings; single words match tokens.
     if (t.includes(' ')) {
       if (String(requestText).toLowerCase().includes(t)) score += 3;
     } else if (tokens.has(t)) {
       score += 2;
     }
   }
-  
+  // Loose name/description overlap is a weak signal only.
   const nameTokens = tokenize(`${skill.name} ${skill.description}`);
   for (const t of tokens) if (nameTokens.has(t)) score += 0.5;
   return score;
 }
 
-
+/** Enabled skills relevant to a request, best first. */
 export function matchSkills(skills, requestText, { limit = 3, minScore = 2 } = {}) {
   return skills
     .map((s) => ({ skill: s, score: scoreSkill(s, requestText) }))

@@ -1,23 +1,23 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+// ModelRouter — cost-aware model selection (harness spec §12).
+//
+// Models are grouped into tiers; each turn purpose (main loop, planning,
+// compaction, wrap-up, verification) is resolved to the MINIMUM-cost model
+// that can plausibly do that piece of work. Never automatically start at the
+// most expensive model; escalate only when a decision or failure justifies it.
+//
+// Tier assignment per model row, in priority order:
+//   1. explicit user override  — model.params.routing_tier (Settings → Providers)
+//   2. provider kind           — ollama → local (local models are the cheapest
+//                                capacity and the LOCAL tier by definition)
+//   3. model-id heuristics     — mini/flash/haiku/nano → fast; o1/o3/r1/thinking
+//                                → reasoning; opus/pro/max/ultra → premium
+//   4. default                 — balanced
+//
+// Routing modes (user setting `model_routing.mode`):
+//   off  — every purpose uses the conversation's model (previous behavior)
+//   aux  — auxiliary purposes (planning/compaction/wrap-up/verification) route
+//          by tier; the main loop keeps the conversation model      [default]
+//   full — the main loop of agent-mode turns also routes by the decision's tier
 import { logger } from '../core/logger.js';
 
 const log = logger('model-router');
@@ -35,7 +35,7 @@ function providerKindOf(repos, userId, modelRow) {
   return provider?.kind || null;
 }
 
-
+/** Classify one model row into a tier (pure; exported for tests). */
 export function classifyModelRow(modelRow, providerKind) {
   const explicit = modelRow?.params?.routing_tier;
   if (explicit && TIERS.includes(explicit)) return explicit;
@@ -49,7 +49,7 @@ export function classifyModelRow(modelRow, providerKind) {
 }
 
 export function createModelRouter({ repos, decision = null }) {
-  
+  /** tier -> [modelRows] for one user, healthy providers first. */
   function modelsByTier(userId) {
     const byTier = new Map(TIERS.map((t) => [t, []]));
     const models = repos.providers.listModels(userId) || [];
@@ -68,14 +68,17 @@ export function createModelRouter({ repos, decision = null }) {
     return byTier;
   }
 
-  
+  /**
+   * Pick a model row of `tier`, falling back to the nearest cheaper tier then
+   * the nearest dearer one (minimum-cost subject to availability).
+   */
   function select(userId, tier, { excludeIds = [] } = {}) {
     const byTier = modelsByTier(userId);
     const start = TIERS.indexOf(tier);
     if (start < 0) return null;
     const order = [
-      ...TIERS.slice(0, start + 1).reverse(), 
-      ...TIERS.slice(start + 1), 
+      ...TIERS.slice(0, start + 1).reverse(), // requested tier first, then cheaper
+      ...TIERS.slice(start + 1), // then dearer, as a last resort
     ];
     for (const t of order) {
       const candidate = byTier.get(t).find((m) => !excludeIds.includes(m.id));
@@ -84,7 +87,7 @@ export function createModelRouter({ repos, decision = null }) {
     return null;
   }
 
-  
+  /** One tier up from the model's own tier (for escalation on failure/verification). */
   function escalationModel(userId, modelRowId) {
     const current = repos.providers.getModel(userId, modelRowId);
     if (!current) return null;
@@ -95,7 +98,7 @@ export function createModelRouter({ repos, decision = null }) {
     return select(userId, TIERS[idx + 1], { excludeIds: [modelRowId] });
   }
 
-  
+  /** Effective routing config for one user (defaults = 'aux'). */
   function routingConfig(userId) {
     const stored = repos.users.getSetting(userId, 'model_routing') || {};
     const s = typeof stored === 'object' ? stored : {};
@@ -114,7 +117,12 @@ export function createModelRouter({ repos, decision = null }) {
 
   const AUX_PURPOSES = new Set(['planning', 'compaction', 'wrap-up', 'verification', 'research-planning']);
 
-  
+  /**
+   * Resolve the model row id for one purpose.
+   *   requested — the conversation/pinned model (always the fallback)
+   *   decision  — the turn routing decision (may be null)
+   * Returns a model row id (never null when `requested` is valid).
+   */
   function purposeModel({ userId, requested, purpose, decision = null }) {
     if (!requested) return requested;
     try {
@@ -156,7 +164,7 @@ export function createModelRouter({ repos, decision = null }) {
     return TIERS[idx];
   }
 
-  
+  /** Tier map for the Settings UI (per model row: id → tier). */
   function tierMap(userId) {
     const byTier = modelsByTier(userId);
     const out = {};

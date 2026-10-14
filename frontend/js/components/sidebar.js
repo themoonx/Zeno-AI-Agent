@@ -1,4 +1,4 @@
-
+// Sidebar: the conversation list plus contextual lists for other sections.
 import { h } from '../ui.js';
 import { icon } from '../icons.js';
 import { store } from '../state.js';

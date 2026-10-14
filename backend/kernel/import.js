@@ -1,12 +1,12 @@
-
-
-
-
-
-
-
-
-
+// Backfill importer — brings pre-kernel history into the session event log so
+// the invariant applies uniformly. Idempotent: a conversation/run that already
+// has a session is skipped. Runs once at boot.
+//
+// Chat conversations: messages rows → user/message · assistant/attempt ·
+// tool/completed · assistant/message events (message rows are NOT rewritten —
+// they already ARE the projection).
+// Agent runs: run_events rows → session_events with the dot→slash vocabulary
+// translation.
 const LEGACY_TYPE_MAP = {
   'agent.started': 'turn/start',
   'phase.changed': 'phase/changed',
@@ -22,14 +22,14 @@ const LEGACY_TYPE_MAP = {
   'agent.completed': 'assistant/message',
   'agent.failed': 'session/failed',
   'agent.interrupted': 'turn/aborted',
-  
+  // output.delta / output.reasoning were live-only — deliberately dropped.
 };
 
 export function importLegacyHistory({ repos, kernel, log }) {
   let conversations = 0;
   let runs = 0;
 
-  
+  // ── conversations → chat sessions ─────────────────────────────────────────
   for (const conv of repos.chat.listAllConversationHeaders()) {
     if (repos.sessions.latestForConversation(conv.id)) continue;
     const messages = repos.chat.listMessages(conv.id, { limit: 5000 });
@@ -59,14 +59,14 @@ export function importLegacyHistory({ repos, kernel, log }) {
     repos.sessions.setStatus(session.id, 'ended');
   }
 
-  
+  // ── agent runs with legacy events → task/chat sessions ───────────────────
   for (const run of repos.runs.listRunsWithLegacyEvents()) {
     if (repos.sessions.activeForRun(run.id)) continue;
     const session = kernel.create({ userId: run.userId, kind: run.kind === 'chat' ? 'chat' : 'task', runId: run.id, conversationId: run.conversationId });
     runs++;
     for (const ev of repos.runs.listEvents(run.id)) {
       const type = LEGACY_TYPE_MAP[ev.type];
-      if (!type) continue; 
+      if (!type) continue; // live-only or unknown legacy types are dropped
       let data = ev.data || {};
       if (type === 'assistant/message' && data?.result != null) {
         data = { text: data.result, usage: data.usage };

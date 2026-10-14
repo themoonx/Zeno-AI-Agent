@@ -1,6 +1,6 @@
-
-
-
+// Shared root-confined filesystem helpers for the LOCAL execution environment
+// (server-side path — used when no daemon is connected and Zeno itself runs on
+// the user's machine).
 import path from 'node:path';
 import { config } from '../core/config.js';
 

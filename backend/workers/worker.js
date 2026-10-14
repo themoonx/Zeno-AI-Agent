@@ -1,6 +1,6 @@
-
-
-
+// Background workers. Job queue is durable (DB-backed, survives restarts);
+// when REDIS_URL is configured a Redis-based coordination layer can be added
+// behind the same claimNext/complete/fail contract (ops.repo).
 import crypto from 'node:crypto';
 import { config } from '../core/config.js';
 import { logger } from '../core/logger.js';
@@ -40,8 +40,8 @@ export function createWorkerLoop({ repos, telemetry }) {
     } catch (err) {
       log.warn(`job #${job.seq} ${job.type} failed: ${err.message}`, { stack: err.stack });
       repos.ops.failJob(job.seq, err.message);
-      
-      
+      // Observability: a job that exhausted its attempts is a failure; one
+      // that will run again is a retry.
       const willRetry = Number(job.attempts || 1) < Number(job.maxAttempts || 3);
       if (willRetry) {
         telemetry?.retry({ userId: job.userId, sessionId: null, attempt: Number(job.attempts || 1), error: err.message });
@@ -50,7 +50,7 @@ export function createWorkerLoop({ repos, telemetry }) {
       }
     } finally {
       active--;
-      
+      // Pull the next job immediately if capacity remains.
       setImmediate(tick);
     }
   }

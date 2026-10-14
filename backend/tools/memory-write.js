@@ -1,6 +1,6 @@
-
-
-
+// Memory write tool — persists a durable note through the selective storage
+// pipeline: dedupe, conflict detection, and importance scoring happen
+// server-side, so the model just states what it wants remembered.
 export const memoryWriteTool = {
   name: 'memory_write',
   displayName: 'Memory Write',

@@ -1,5 +1,5 @@
-
-
+// Connector integration tests. Isolated SQLite DB + mock transport injection —
+// no weakening of production SSRF protection (create still validates public-only).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -22,8 +22,8 @@ for (const [i, u] of TEST_USERS.entries()) {
 const noopAudit = () => {};
 const allowAllEndpoint = async () => {};
 
-
-
+// Recorded requests let assertions verify headers, body shape, and sessions.
+// Bodies vary by call stage: initialize / tools/list (SSE), notifications (202 empty).
 const recorded = [];
 const mockBodyFor = (url, init = {}) => {
   let msg;

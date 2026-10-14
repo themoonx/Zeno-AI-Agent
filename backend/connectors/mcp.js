@@ -1,8 +1,8 @@
-
-
-
-
-
+// Remote MCP connector over the Streamable HTTP transport (JSON / SSE
+// responses). Sends initialize → notifications/initialized → tools/list,
+// then tools/call per invocation. Sessions and protocol-version headers are
+// honored when the server provides them. stdio and SSE(legacy) transports are
+// not supported and reported as such.
 import { errors } from '../core/errors.js';
 import { requestViaPublicInternet } from './fetch.js';
 
@@ -35,7 +35,7 @@ function extractSseData(text) {
     try {
       events.push(JSON.parse(dataLines.join('\n')));
     } catch {
-      
+      /* ignore malformed event */
     }
     if (events.length >= MAX_SSE_EVENTS) break;
   }

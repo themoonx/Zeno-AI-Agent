@@ -1,17 +1,17 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+// Remote decision provider — the integration boundary for an EXTERNAL Jev
+// instance. Two transport modes, both real HTTP (never simulated):
+//
+//   mode 'json'   POST the decision request to a custom Jev endpoint and
+//                 expect the structured decision object back. Use this for a
+//                 dedicated Jev service / edge function.
+//   mode 'openai' Use any OpenAI-compatible endpoint (a small, cheap, fast
+//                 model — e.g. a 8B classifier or a mini-tier model) with a
+//                 strict JSON contract as the decision maker.
+//
+// Contract with the engine: `decide()` resolves a decision object or null.
+// EVERY failure path (timeout, non-2xx, bad shape, abort) resolves null — the
+// engine then falls back to the deterministic heuristic provider (spec §43:
+// the application never depends on one external service).
 import { decryptSecret } from '../core/crypto.js';
 
 const DECISION_SCHEMA_HINT = {

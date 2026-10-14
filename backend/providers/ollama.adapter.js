@@ -1,4 +1,4 @@
-
+// Ollama native API adapter (/api/chat, NDJSON streaming; /api/embeddings).
 import { upstreamFromResponse } from '../core/errors.js';
 
 function toOllamaMessages(messages) {

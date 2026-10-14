@@ -1,6 +1,6 @@
-
-
-
+// Control-center API: permission policy rules, local-agent pairing, and the
+// security surface (sessions + audit). Backs the Settings → Permissions /
+// Environments / Security tabs.
 import { Router } from 'express';
 import crypto from 'node:crypto';
 import { validate } from '../core/validate.js';
@@ -18,7 +18,7 @@ function hashToken(token) {
 export function createControlRoutes({ repos, audit, policy, runtimeControl, snapshots, policyReevaluator, telemetry }) {
   const router = Router();
 
-  
+  // ── permissions ───────────────────────────────────────────────────────────
   router.get('/permissions', (req, res) => {
     const stored = repos.users.getSetting(req.auth.userId, 'permission_mode');
     res.json({
@@ -34,13 +34,13 @@ export function createControlRoutes({ repos, audit, policy, runtimeControl, snap
         subject: { type: 'string', required: true, min: 3, max: 300, pattern: /^[a-z.*][a-z0-9_.:*-]*:[\s\S]+$/i },
         effect: { type: 'string', required: true, enum: ['allow', 'ask', 'deny'] },
       });
-      
+      // Validate the subject parses as class[:pattern] against a known class list.
       const cls = body.subject.split(':')[0].toLowerCase();
       const KNOWN = ['fs.read', 'fs.write', 'fs.delete', 'shell.exec', 'code.exec', 'net.read', 'net.request', 'memory.read', 'memory.write', 'mcp', 'plugin', 'plan', '*'];
       if (!KNOWN.includes(cls)) throw errors.badRequest(`Unknown action class "${cls}". Known: ${KNOWN.join(', ')}`);
       const rule = repos.policy.insert({ id: randomId('rule'), userId: req.auth.userId, subject: body.subject, effect: body.effect });
       audit({ userId: req.auth.userId, action: 'policy.rule.create', meta: { subject: body.subject, effect: body.effect } });
-      
+      // Re-evaluate pending approvals: a rule change may resolve what was waiting.
       publish(topics.userEvents(req.auth.userId), { type: 'policy.changed', userId: req.auth.userId });
       policyReevaluator?.reevaluatePending(req.auth.userId);
       res.status(201).json({ rule });
@@ -63,7 +63,7 @@ export function createControlRoutes({ repos, audit, policy, runtimeControl, snap
     }
   });
 
-  
+  // Effective-decision preview: what would the engine do for a given tool+path?
   router.post('/permissions/preview', async (req, res, next) => {
     try {
       const body = validate(req.body, {
@@ -79,7 +79,7 @@ export function createControlRoutes({ repos, audit, policy, runtimeControl, snap
     }
   });
 
-  
+  // ── environments (local agents) ───────────────────────────────────────────
   router.get('/environments', (req, res) => {
     const registry = getAgentRegistry();
     const agents = repos.localAgents.list(req.auth.userId).map((a) => ({ ...a, online: registry.isOnline(req.auth.userId, a.id) && a.status === 'active' }));
@@ -101,7 +101,7 @@ export function createControlRoutes({ repos, audit, policy, runtimeControl, snap
         roots: body.roots || null,
       });
       audit({ userId: req.auth.userId, action: 'local_agent.pair', target: agent.id, meta: { name: body.name } });
-      
+      // The plaintext token is returned exactly once.
       res.status(201).json({ agent, token, connect: `node local-agent/agent.js --server <this-server-url> --token ${token}` });
     } catch (err) {
       next(err);
@@ -120,7 +120,7 @@ export function createControlRoutes({ repos, audit, policy, runtimeControl, snap
     }
   });
 
-  
+  // ── security ──────────────────────────────────────────────────────────────
   router.get('/security/sessions', (req, res) => {
     res.json({ sessions: repos.users.listSessions(req.auth.userId) });
   });
@@ -135,10 +135,10 @@ export function createControlRoutes({ repos, audit, policy, runtimeControl, snap
     res.json({ entries: repos.ops.listAudit(req.auth.userId, { limit: Number(req.query.limit) || 150 }) });
   });
 
-  
-  
-  
-  
+  // ── observability ──────────────────────────────────────────────────────────
+  // Aggregated telemetry for this user's recent activity (models, tools,
+  // permissions, failures). Correlated records stay internal; only scrubbed
+  // rollups are exposed.
   router.get('/telemetry', (req, res) => {
     const sinceMs = Math.min(30 * 24 * 3600 * 1000, Math.max(3600_000, Number(req.query.sinceHours || 24) * 3600_000));
     res.json({ sinceMs, summary: telemetry?.summary(req.auth.userId, { sinceMs }) || null });

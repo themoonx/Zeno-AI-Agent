@@ -1,7 +1,7 @@
-
+// In-memory sliding-window rate limiter (per key). For single-process deploys.
 const buckets = new Map();
 
-
+// Periodically drop stale buckets so the map doesn't grow unbounded.
 setInterval(() => {
   const now = Date.now();
   for (const [key, bucket] of buckets) {
